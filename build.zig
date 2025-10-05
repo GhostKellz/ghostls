@@ -7,15 +7,22 @@ const std = @import("std");
 // build runner to parallelize the build automatically (and the cache system to
 // know when a step doesn't need to be re-run).
 pub fn build(b: *std.Build) void {
-    // Standard target options allow the person running `zig build` to choose
-    // what target to build for. Here we do not override the defaults, which
-    // means any target is allowed, and the default is native. Other options
-    // for restricting supported target set are available.
     const target = b.standardTargetOptions(.{});
-    // Standard optimization options allow the person running `zig build` to select
-    // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
-    // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
+
+    // Dependencies
+    const grove = b.dependency("grove", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const ghostlang = b.dependency("ghostlang", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const zlog = b.dependency("zlog", .{
+        .target = target,
+        .optimize = optimize,
+    });
     // It's also possible to define more custom flags to toggle optional features
     // of this build script using `b.option()`. All defined flags (including
     // target and optimize options) will be listed when running `zig build --help`
@@ -29,16 +36,13 @@ pub fn build(b: *std.Build) void {
     // multiple modules and consumers will need to be able to specify which
     // module they want to access.
     const mod = b.addModule("ghostls", .{
-        // The root source file is the "entry point" of this module. Users of
-        // this module will only be able to access public declarations contained
-        // in this file, which means that if you have declarations that you
-        // intend to expose to consumers that were defined in other files part
-        // of this module, you will have to make sure to re-export them from
-        // the root file.
         .root_source_file = b.path("src/root.zig"),
-        // Later on we'll use this module as the root module of a test executable
-        // which requires us to specify a target.
         .target = target,
+        .imports = &.{
+            .{ .name = "grove", .module = grove.module("grove") },
+            .{ .name = "ghostlang", .module = ghostlang.module("ghostlang") },
+            .{ .name = "zlog", .module = zlog.module("zlog") },
+        },
     });
 
     // Here we define an executable. An executable needs to have a root module
@@ -60,25 +64,14 @@ pub fn build(b: *std.Build) void {
     const exe = b.addExecutable(.{
         .name = "ghostls",
         .root_module = b.createModule(.{
-            // b.createModule defines a new module just like b.addModule but,
-            // unlike b.addModule, it does not expose the module to consumers of
-            // this package, which is why in this case we don't have to give it a name.
             .root_source_file = b.path("src/main.zig"),
-            // Target and optimization levels must be explicitly wired in when
-            // defining an executable or library (in the root module), and you
-            // can also hardcode a specific target for an executable or library
-            // definition if desireable (e.g. firmware for embedded devices).
             .target = target,
             .optimize = optimize,
-            // List of modules available for import in source files part of the
-            // root module.
             .imports = &.{
-                // Here "ghostls" is the name you will use in your source code to
-                // import this module (e.g. `@import("ghostls")`). The name is
-                // repeated because you are allowed to rename your imports, which
-                // can be extremely useful in case of collisions (which can happen
-                // importing modules from different packages).
                 .{ .name = "ghostls", .module = mod },
+                .{ .name = "grove", .module = grove.module("grove") },
+                .{ .name = "ghostlang", .module = ghostlang.module("ghostlang") },
+                .{ .name = "zlog", .module = zlog.module("zlog") },
             },
         }),
     });

@@ -1,10 +1,15 @@
 const std = @import("std");
-const ghostls = @import("ghostls");
+const Server = @import("lsp/server.zig").Server;
 
 pub fn main() !void {
-    // Prints to stderr, ignoring potential errors.
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
-    try ghostls.bufferedPrint();
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var server = try Server.init(allocator);
+    defer server.deinit();
+
+    try server.run();
 }
 
 test "simple test" {
