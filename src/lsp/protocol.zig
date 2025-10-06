@@ -256,6 +256,13 @@ pub const DocumentSymbol = struct {
     children: ?[]DocumentSymbol = null,
 };
 
+pub const SymbolInformation = struct {
+    name: []const u8,
+    kind: SymbolKind,
+    location: Location,
+    containerName: ?[]const u8 = null,
+};
+
 // Definition
 pub const DefinitionParams = struct {
     textDocument: TextDocumentIdentifier,

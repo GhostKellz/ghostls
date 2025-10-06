@@ -16,23 +16,200 @@ pub const CompletionProvider = struct {
         text: []const u8,
         position: protocol.Position,
     ) ![]CompletionItem {
-        _ = tree;
-        _ = text;
-        _ = position;
-
-        // For RC1, provide static completion items
-        // TODO: Add context-aware completions based on AST
-
         var items: std.ArrayList(CompletionItem) = .empty;
         errdefer items.deinit(self.allocator);
 
-        // Add keywords
-        try addKeywordCompletions(self.allocator, &items);
+        // Analyze context at cursor position
+        const context = try self.analyzeContext(tree, text, position);
 
-        // Add built-in functions
-        try addBuiltinCompletions(self.allocator, &items);
+        // Filter completions based on context
+        switch (context.kind) {
+            .AfterDot => {
+                // After '.' - show object methods/properties
+                try addObjectMethodCompletions(self.allocator, &items);
+            },
+            .AfterColon => {
+                // After ':' - show type members (future)
+                try addBuiltinCompletions(self.allocator, &items);
+            },
+            .InFunctionBody => {
+                // Inside function - show local vars, params, builtins
+                try addLocalScopeCompletions(self.allocator, &items, context.scope_vars);
+                try addBuiltinCompletions(self.allocator, &items);
+            },
+            .TopLevel => {
+                // Top-level - show keywords and global functions
+                try addKeywordCompletions(self.allocator, &items);
+                try addBuiltinCompletions(self.allocator, &items);
+            },
+            .Default => {
+                // Default - show everything (fallback to v0.1.0 behavior)
+                try addKeywordCompletions(self.allocator, &items);
+                try addBuiltinCompletions(self.allocator, &items);
+            },
+        }
 
         return try items.toOwnedSlice(self.allocator);
+    }
+
+    const CompletionContext = struct {
+        kind: ContextKind,
+        scope_vars: []const []const u8 = &.{},
+
+        const ContextKind = enum {
+            AfterDot,
+            AfterColon,
+            InFunctionBody,
+            TopLevel,
+            Default,
+        };
+    };
+
+    fn analyzeContext(
+        self: *CompletionProvider,
+        tree: *grove.Tree,
+        text: []const u8,
+        position: protocol.Position,
+    ) !CompletionContext {
+        // Convert LSP position (0-indexed) to byte offset
+        const offset = try self.positionToOffset(text, position);
+
+        // Check for trigger characters in the text before cursor
+        if (offset > 0 and offset <= text.len) {
+            const char_before = text[offset - 1];
+            if (char_before == '.') {
+                return .{ .kind = .AfterDot };
+            }
+            if (char_before == ':') {
+                return .{ .kind = .AfterColon };
+            }
+        }
+
+        // Find node at cursor position using tree-sitter
+        const root = tree.rootNode() orelse {
+            return .{ .kind = .Default };
+        };
+        const grove_point = grove.Point{ .row = position.line, .column = position.character };
+        const node = root.descendantForPointRange(grove_point, grove_point) orelse {
+            return .{ .kind = .Default };
+        };
+
+        // Check if we're inside a function body
+        var current = node;
+        while (current.parent()) |parent| {
+            const node_type = current.kind();
+            if (std.mem.eql(u8, node_type, "function_declaration") or
+                std.mem.eql(u8, node_type, "function_definition"))
+            {
+                // We're inside a function - collect local variables
+                const scope_vars = try self.collectLocalVariables(current, text);
+                return .{ .kind = .InFunctionBody, .scope_vars = scope_vars };
+            }
+            current = parent;
+        }
+
+        // Default to top-level context
+        return .{ .kind = .TopLevel };
+    }
+
+    fn positionToOffset(self: *CompletionProvider, text: []const u8, position: protocol.Position) !usize {
+        _ = self;
+        var line: u32 = 0;
+        var offset: usize = 0;
+
+        while (offset < text.len) : (offset += 1) {
+            if (line == position.line) {
+                // Found the line, now add character offset
+                const result = offset + position.character;
+                return @min(result, text.len);
+            }
+            if (text[offset] == '\n') {
+                line += 1;
+            }
+        }
+
+        return offset;
+    }
+
+    fn collectLocalVariables(
+        self: *CompletionProvider,
+        function_node: grove.Node,
+        text: []const u8,
+    ) ![]const []const u8 {
+        var vars: std.ArrayList([]const u8) = .empty;
+        errdefer vars.deinit(self.allocator);
+
+        // Traverse function body to find variable declarations
+        var cursor = try function_node.treeWalk();
+        defer cursor.deinit();
+
+        if (cursor.gotoFirstChild()) {
+            while (true) {
+                const node = cursor.currentNode();
+                const node_type = node.kind();
+
+                // Look for variable declarations
+                if (std.mem.eql(u8, node_type, "variable_declaration") or
+                    std.mem.eql(u8, node_type, "local_declaration"))
+                {
+                    // Extract variable name
+                    if (node.childByFieldName("name")) |name_node| {
+                        const start = name_node.startByte();
+                        const end = name_node.endByte();
+                        if (end <= text.len) {
+                            const var_name = text[start..end];
+                            try vars.append(self.allocator, try self.allocator.dupe(u8, var_name));
+                        }
+                    }
+                }
+
+                if (!cursor.gotoNextSibling()) break;
+            }
+        }
+
+        return try vars.toOwnedSlice(self.allocator);
+    }
+
+    fn addLocalScopeCompletions(
+        allocator: std.mem.Allocator,
+        items: *std.ArrayList(CompletionItem),
+        local_vars: []const []const u8,
+    ) !void {
+        for (local_vars) |var_name| {
+            try items.append(allocator, .{
+                .label = try allocator.dupe(u8, var_name),
+                .kind = .Variable,
+                .detail = try allocator.dupe(u8, "local variable"),
+                .documentation = null,
+                .insertText = null,
+            });
+        }
+    }
+
+    fn addObjectMethodCompletions(allocator: std.mem.Allocator, items: *std.ArrayList(CompletionItem)) !void {
+        // Object/array methods that appear after '.'
+        const methods = [_]struct { label: []const u8, detail: []const u8, doc: []const u8 }{
+            .{ .label = "push", .detail = "method(value: any)", .doc = "Add element to array" },
+            .{ .label = "pop", .detail = "method(): any", .doc = "Remove and return last element" },
+            .{ .label = "length", .detail = "property: number", .doc = "Array/string length" },
+            .{ .label = "get", .detail = "method(key: string): any", .doc = "Get property value" },
+            .{ .label = "set", .detail = "method(key: string, value: any)", .doc = "Set property value" },
+            .{ .label = "keys", .detail = "method(): Array", .doc = "Get object keys" },
+            .{ .label = "values", .detail = "method(): Array", .doc = "Get object values" },
+            .{ .label = "indexOf", .detail = "method(search: any): number", .doc = "Find element index" },
+            .{ .label = "slice", .detail = "method(start: number, end: number): Array", .doc = "Extract array slice" },
+            .{ .label = "join", .detail = "method(separator: string): string", .doc = "Join elements" },
+        };
+
+        for (methods) |method| {
+            try items.append(allocator, .{
+                .label = try allocator.dupe(u8, method.label),
+                .kind = .Method,
+                .detail = try allocator.dupe(u8, method.detail),
+                .documentation = try allocator.dupe(u8, method.doc),
+                .insertText = null,
+            });
+        }
     }
 
     pub fn freeCompletions(self: *CompletionProvider, items: []CompletionItem) void {

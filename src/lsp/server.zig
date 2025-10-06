@@ -7,6 +7,8 @@ const HoverProvider = @import("hover_provider.zig").HoverProvider;
 const SymbolProvider = @import("symbol_provider.zig").SymbolProvider;
 const DefinitionProvider = @import("definition_provider.zig").DefinitionProvider;
 const CompletionProvider = @import("completion_provider.zig").CompletionProvider;
+const ReferencesProvider = @import("references_provider.zig").ReferencesProvider;
+const WorkspaceSymbolProvider = @import("workspace_symbol_provider.zig").WorkspaceSymbolProvider;
 
 pub const Server = struct {
     allocator: std.mem.Allocator,
@@ -18,6 +20,8 @@ pub const Server = struct {
     symbol_provider: SymbolProvider,
     definition_provider: DefinitionProvider,
     completion_provider: CompletionProvider,
+    references_provider: ReferencesProvider,
+    workspace_symbol_provider: WorkspaceSymbolProvider,
     initialized: bool = false,
     shutdown_requested: bool = false,
 
@@ -32,11 +36,14 @@ pub const Server = struct {
             .symbol_provider = SymbolProvider.init(allocator),
             .definition_provider = DefinitionProvider.init(allocator),
             .completion_provider = CompletionProvider.init(allocator),
+            .references_provider = ReferencesProvider.init(allocator),
+            .workspace_symbol_provider = WorkspaceSymbolProvider.init(allocator),
         };
     }
 
     pub fn deinit(self: *Server) void {
         self.document_manager.deinit();
+        self.workspace_symbol_provider.deinit();
     }
 
     pub fn run(self: *Server) !void {
@@ -129,6 +136,12 @@ pub const Server = struct {
         } else if (std.mem.eql(u8, method_str, protocol.Methods.text_document_completion)) {
             const id = maybe_id orelse return error.InvalidRequest;
             return try self.handleCompletion(id, obj.get("params"));
+        } else if (std.mem.eql(u8, method_str, protocol.Methods.text_document_references)) {
+            const id = maybe_id orelse return error.InvalidRequest;
+            return try self.handleReferences(id, obj.get("params"));
+        } else if (std.mem.eql(u8, method_str, protocol.Methods.workspace_symbol)) {
+            const id = maybe_id orelse return error.InvalidRequest;
+            return try self.handleWorkspaceSymbol(id, obj.get("params"));
         } else if (std.mem.eql(u8, method_str, protocol.Methods.workspace_did_change_configuration)) {
             return try self.handleDidChangeConfiguration(obj.get("params"));
         } else {
@@ -152,7 +165,7 @@ pub const Server = struct {
         // Build InitializeResult JSON manually for compatibility
         const capabilities_json = try std.fmt.allocPrint(
             self.allocator,
-            \\{{"positionEncoding":"utf-16","textDocumentSync":{{"openClose":true,"change":1,"save":{{"includeText":true}}}},"hoverProvider":true,"completionProvider":{{"triggerCharacters":[".",":"]}},"definitionProvider":true,"referencesProvider":false,"documentSymbolProvider":true}}
+            \\{{"positionEncoding":"utf-16","textDocumentSync":{{"openClose":true,"change":1,"save":{{"includeText":true}}}},"hoverProvider":true,"completionProvider":{{"triggerCharacters":[".",":"]}},"definitionProvider":true,"referencesProvider":true,"workspaceSymbolProvider":true,"documentSymbolProvider":true}}
             ,
             .{},
         );
@@ -208,6 +221,12 @@ pub const Server = struct {
             // Open document and parse
             try self.document_manager.open(uri, text, version);
 
+            // Index symbols for workspace search
+            const doc = self.document_manager.get(uri).?;
+            if (doc.tree) |*tree| {
+                try self.workspace_symbol_provider.indexDocument(uri, tree, text);
+            }
+
             // Publish diagnostics
             try self.publishDiagnostics(uri);
         }
@@ -234,6 +253,12 @@ pub const Server = struct {
 
                 // Update document
                 try self.document_manager.update(uri, new_text.string, version);
+
+                // Re-index symbols for workspace search
+                const doc = self.document_manager.get(uri).?;
+                if (doc.tree) |*tree| {
+                    try self.workspace_symbol_provider.indexDocument(uri, tree, new_text.string);
+                }
 
                 // Publish diagnostics
                 try self.publishDiagnostics(uri);
@@ -670,6 +695,147 @@ pub const Server = struct {
         }
 
         return try self.response_builder.success(self.jsonIdToProtocolId(id), null);
+    }
+
+    fn handleReferences(self: *Server, id: std.json.Value, params: ?std.json.Value) ![]const u8 {
+        if (params) |p| {
+            const text_document = p.object.get("textDocument") orelse return error.InvalidParams;
+            const uri = text_document.object.get("uri") orelse return error.InvalidParams;
+            const position = p.object.get("position") orelse return error.InvalidParams;
+            const context = p.object.get("context") orelse return error.InvalidParams;
+
+            const line = @as(u32, @intCast(position.object.get("line").?.integer));
+            const character = @as(u32, @intCast(position.object.get("character").?.integer));
+            const include_declaration = context.object.get("includeDeclaration").?.bool;
+
+            self.transport.log("References requested: {s} at {d}:{d}", .{ uri.string, line, character });
+
+            const doc = self.document_manager.get(uri.string) orelse {
+                return try self.response_builder.success(self.jsonIdToProtocolId(id), null);
+            };
+
+            if (doc.tree) |*tree| {
+                const locations = try self.references_provider.findReferences(
+                    tree,
+                    doc.text,
+                    uri.string,
+                    .{ .line = line, .character = character },
+                    include_declaration,
+                );
+                defer self.references_provider.freeLocations(locations);
+
+                // Build locations JSON array
+                var locs_json: std.ArrayList(u8) = .empty;
+                defer locs_json.deinit(self.allocator);
+
+                try locs_json.appendSlice(self.allocator, "[");
+                for (locations, 0..) |loc, i| {
+                    if (i > 0) try locs_json.appendSlice(self.allocator, ",");
+
+                    const uri_escaped = try self.escapeJson(loc.uri);
+                    defer self.allocator.free(uri_escaped);
+
+                    const loc_json = try std.fmt.allocPrint(
+                        self.allocator,
+                        "{{\"uri\":\"{s}\",\"range\":{{\"start\":{{\"line\":{d},\"character\":{d}}},\"end\":{{\"line\":{d},\"character\":{d}}}}}}}",
+                        .{
+                            uri_escaped,
+                            loc.range.start.line,
+                            loc.range.start.character,
+                            loc.range.end.line,
+                            loc.range.end.character,
+                        },
+                    );
+                    defer self.allocator.free(loc_json);
+
+                    try locs_json.appendSlice(self.allocator, loc_json);
+                }
+                try locs_json.appendSlice(self.allocator, "]");
+
+                const id_str = switch (self.jsonIdToProtocolId(id)) {
+                    .integer => |i| try std.fmt.allocPrint(self.allocator, "{d}", .{i}),
+                    .string => |s| try std.fmt.allocPrint(self.allocator, "\"{s}\"", .{s}),
+                };
+                defer self.allocator.free(id_str);
+
+                return try std.fmt.allocPrint(
+                    self.allocator,
+                    "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{s}}}",
+                    .{ id_str, locs_json.items },
+                );
+            }
+        }
+
+        return try self.response_builder.success(self.jsonIdToProtocolId(id), null);
+    }
+
+    fn handleWorkspaceSymbol(self: *Server, id: std.json.Value, params: ?std.json.Value) ![]const u8 {
+        const query = if (params) |p|
+            if (p.object.get("query")) |q| q.string else ""
+        else
+            "";
+
+        self.transport.log("Workspace symbol requested: query='{s}'", .{query});
+
+        const symbols = try self.workspace_symbol_provider.search(query);
+        defer self.workspace_symbol_provider.freeSymbols(symbols);
+
+        // Build symbols JSON array
+        var syms_json: std.ArrayList(u8) = .empty;
+        defer syms_json.deinit(self.allocator);
+
+        try syms_json.appendSlice(self.allocator, "[");
+        for (symbols, 0..) |symbol, i| {
+            if (i > 0) try syms_json.appendSlice(self.allocator, ",");
+
+            const name_escaped = try self.escapeJson(symbol.name);
+            defer self.allocator.free(name_escaped);
+
+            const uri_escaped = try self.escapeJson(symbol.location.uri);
+            defer self.allocator.free(uri_escaped);
+
+            const container_str = if (symbol.containerName) |container| blk: {
+                const container_escaped = try self.escapeJson(container);
+                defer self.allocator.free(container_escaped);
+                break :blk try std.fmt.allocPrint(
+                    self.allocator,
+                    ",\"containerName\":\"{s}\"",
+                    .{container_escaped},
+                );
+            } else try self.allocator.dupe(u8, "");
+            defer self.allocator.free(container_str);
+
+            const sym_json = try std.fmt.allocPrint(
+                self.allocator,
+                "{{\"name\":\"{s}\",\"kind\":{d},\"location\":{{\"uri\":\"{s}\",\"range\":{{\"start\":{{\"line\":{d},\"character\":{d}}},\"end\":{{\"line\":{d},\"character\":{d}}}}}}}{s}}}",
+                .{
+                    name_escaped,
+                    @intFromEnum(symbol.kind),
+                    uri_escaped,
+                    symbol.location.range.start.line,
+                    symbol.location.range.start.character,
+                    symbol.location.range.end.line,
+                    symbol.location.range.end.character,
+                    container_str,
+                },
+            );
+            defer self.allocator.free(sym_json);
+
+            try syms_json.appendSlice(self.allocator, sym_json);
+        }
+        try syms_json.appendSlice(self.allocator, "]");
+
+        const id_str = switch (self.jsonIdToProtocolId(id)) {
+            .integer => |i| try std.fmt.allocPrint(self.allocator, "{d}", .{i}),
+            .string => |s| try std.fmt.allocPrint(self.allocator, "\"{s}\"", .{s}),
+        };
+        defer self.allocator.free(id_str);
+
+        return try std.fmt.allocPrint(
+            self.allocator,
+            "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{s}}}",
+            .{ id_str, syms_json.items },
+        );
     }
 
     /// Helper to convert std.json.Value to protocol ID

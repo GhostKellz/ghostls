@@ -36,6 +36,55 @@ It provides rich editor features — syntax highlighting, document symbols, navi
 
 ---
 
+## 🎯 Language Features
+
+### ✅ v0.2.0 - Smart Intelligence
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| 🔍 **Find References** | ✅ | Find all symbol usages with `textDocument/references` |
+| 🔎 **Workspace Symbols** | ✅ | Project-wide symbol search with fuzzy matching |
+| 🧠 **Context-Aware Completions** | ✅ | Smart suggestions based on cursor position and scope |
+| 📍 **Go to Definition** | ✅ | Navigate to symbol definitions |
+| 📝 **Document Symbols** | ✅ | Outline view of functions and variables |
+| 💡 **Hover** | ✅ | Type and documentation on hover |
+| 🔴 **Diagnostics** | ✅ | Real-time syntax error detection |
+| 📄 **Document Sync** | ✅ | Automatic re-parsing on file changes |
+
+### Context-Aware Completions
+
+ghostls now provides intelligent completions based on your cursor position:
+
+- **After `.`** → Method and property completions
+- **Inside functions** → Local variables + built-in functions
+- **Top level** → Keywords + global symbols
+- **Trigger characters**: `.` and `:`
+
+### Find References
+
+Find all usages of a symbol across your document:
+
+```lua
+-- Example: Find all references to `myFunction`
+-- Cursor on myFunction → Shows all call sites
+local function myFunction() end
+myFunction()  -- ← Found
+myFunction()  -- ← Found
+```
+
+### Workspace Symbol Search
+
+Quick navigation to any symbol in your project:
+
+```
+Ctrl+T → Search for "my" → Shows:
+  - myVariable (file:///src/main.gza)
+  - myFunction (file:///src/utils.gza)
+  - myClass (file:///src/models.gza)
+```
+
+---
+
 ## 🧱 Architecture
 
       ┌───────────────────────────────┐
@@ -91,7 +140,7 @@ cd ghostls
 ./install.sh
 
 # Verify installation
-ghostls --version  # Should show: ghostls 0.1.0
+ghostls --version  # Should show: ghostls 0.2.0
 ```
 
 ### Build from Source
@@ -101,8 +150,10 @@ zig build -Doptimize=ReleaseSafe
 
 ### Test
 ```bash
-./scripts/simple_test.sh  # Run basic LSP protocol test
-./tests/grim_integration_test.sh  # Test Grim integration
+./run_tests.sh                        # Run full test suite with memory leak detection
+./scripts/simple_test.sh              # Run basic LSP protocol test
+./tests/grim_integration_test.sh      # Test Grim integration
+zig build test                        # Run unit tests directly
 ```
 
 ## 📝 Editor Integration
@@ -122,12 +173,13 @@ require('lspconfig').ghostls.setup{
 
 ### Grim Editor
 
-**Status**: ✅ ghostls v0.1.0 ready for Grim integration!
+**Status**: ✅ ghostls v0.2.0 ready for Grim integration!
 
 ghostls is fully tested and LSP-compliant. Grim can now:
 - Auto-spawn ghostls for `.gza` files
-- Send LSP requests (hover, definition, completion)
+- Send LSP requests (hover, definition, completion, references, workspace symbols)
 - Receive clean JSON-RPC responses (stdout verified clean)
+- Use context-aware completions for better developer experience
 
 See [integrations/grim/README.md](integrations/grim/README.md) for complete implementation guide.
 

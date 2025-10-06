@@ -128,12 +128,68 @@ pub fn build(b: *std.Build) void {
     // A run step that will run the second test executable.
     const run_exe_tests = b.addRunArtifact(exe_tests);
 
+    // v0.2.0 Feature Tests
+    const references_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/test_references.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "ghostls", .module = mod },
+                .{ .name = "grove", .module = grove.module("grove") },
+            },
+        }),
+    });
+    const run_references_tests = b.addRunArtifact(references_tests);
+
+    const workspace_symbol_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/test_workspace_symbols.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "ghostls", .module = mod },
+                .{ .name = "grove", .module = grove.module("grove") },
+            },
+        }),
+    });
+    const run_workspace_symbol_tests = b.addRunArtifact(workspace_symbol_tests);
+
+    const completions_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/test_completions.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "ghostls", .module = mod },
+                .{ .name = "grove", .module = grove.module("grove") },
+            },
+        }),
+    });
+    const run_completions_tests = b.addRunArtifact(completions_tests);
+
+    const server_capability_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/test_server_capabilities.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "ghostls", .module = mod },
+            },
+        }),
+    });
+    const run_server_capability_tests = b.addRunArtifact(server_capability_tests);
+
     // A top level step for running all tests. dependOn can be called multiple
     // times and since the two run steps do not depend on one another, this will
     // make the two of them run in parallel.
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
+    test_step.dependOn(&run_references_tests.step);
+    test_step.dependOn(&run_workspace_symbol_tests.step);
+    test_step.dependOn(&run_completions_tests.step);
+    test_step.dependOn(&run_server_capability_tests.step);
 
     // Just like flags, top level steps are also listed in the `--help` menu.
     //
