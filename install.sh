@@ -54,7 +54,7 @@ echo
 
 # Build ghostls
 echo "Building ghostls..."
-if ! zig build -Doptimize=ReleaseSafe 2>&1 | grep -v "^info:"; then
+if ! zig build -Doptimize=ReleaseSafe; then
     echo "❌ Build failed"
     exit 1
 fi
