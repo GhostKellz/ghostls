@@ -1,15 +1,96 @@
 const std = @import("std");
 const Server = @import("lsp/server.zig").Server;
 
+const VERSION = "0.1.0";
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    // Parse command-line arguments
+    const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
+
+    const stderr = std.fs.File{ .handle = std.posix.STDERR_FILENO };
+
+    // Handle CLI flags
+    for (args[1..]) |arg| {
+        if (std.mem.eql(u8, arg, "--version") or std.mem.eql(u8, arg, "-v")) {
+            _ = try stderr.write("ghostls ");
+            _ = try stderr.write(VERSION);
+            _ = try stderr.write("\n");
+            return;
+        } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+            try printHelp();
+            return;
+        } else if (std.mem.startsWith(u8, arg, "--log-level=")) {
+            _ = try stderr.write("[ghostls] Log level set to: ");
+            _ = try stderr.write(arg["--log-level=".len..]);
+            _ = try stderr.write("\n");
+            // TODO: Set log level when we add proper logging infrastructure
+        } else {
+            _ = try stderr.write("Unknown argument: ");
+            _ = try stderr.write(arg);
+            _ = try stderr.write("\n");
+            _ = try stderr.write("Run 'ghostls --help' for usage.\n");
+            std.process.exit(1);
+        }
+    }
+
+    // Start LSP server
     var server = try Server.init(allocator);
     defer server.deinit();
 
     try server.run();
+}
+
+fn printHelp() !void {
+    const stderr = std.fs.File{ .handle = std.posix.STDERR_FILENO };
+    _ = try stderr.write(
+        \\ghostls 0.1.0 - Language Server for Ghostlang
+        \\
+        \\USAGE:
+        \\    ghostls [OPTIONS]
+        \\
+        \\OPTIONS:
+        \\    -h, --help              Show this help message
+        \\    -v, --version           Show version information
+        \\    --log-level=LEVEL       Set log level (debug|info|warn|error) [TODO]
+        \\
+        \\DESCRIPTION:
+        \\    ghostls is a Language Server Protocol (LSP) server for the Ghostlang
+        \\    programming language. It provides code intelligence features such as:
+        \\    - Syntax diagnostics
+        \\    - Hover documentation
+        \\    - Go to definition
+        \\    - Auto-completion
+        \\    - Document symbols
+        \\
+        \\    The server communicates via JSON-RPC over stdin/stdout.
+        \\    All logging output goes to stderr (not stdout).
+        \\
+        \\INTEGRATION:
+        \\    - Grim:   Auto-detected when opening .gza files
+        \\    - Neovim: Configure via nvim-lspconfig
+        \\    - VSCode: Install ghostls extension (coming soon)
+        \\
+        \\EXAMPLES:
+        \\    # Start server (used by editors, not run manually)
+        \\    ghostls
+        \\
+        \\    # Check version
+        \\    ghostls --version
+        \\
+        \\    # Show help
+        \\    ghostls --help
+        \\
+        \\PROJECT:
+        \\    GitHub:  https://github.com/ghostkellz/ghostls
+        \\    Docs:    https://github.com/ghostkellz/ghostls/tree/main/docs
+        \\
+        \\
+    );
 }
 
 test "simple test" {

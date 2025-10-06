@@ -63,19 +63,46 @@ It provides rich editor features — syntax highlighting, document symbols, navi
 
 ## 🚀 Quick Start
 
-### Build
+### Install
+
+#### Curl Install (Recommended)
 ```bash
-zig build -Drelease-safe
+curl -fsSL https://raw.githubusercontent.com/ghostkellz/ghostls/main/install.sh | bash
 ```
 
-### Run
+#### Arch Linux (AUR)
 ```bash
-./zig-out/bin/ghostls  # Starts LSP server on stdio
+# Using yay or paru
+yay -S ghostls
+
+# Or manually with makepkg
+git clone https://github.com/ghostkellz/ghostls.git
+cd ghostls
+makepkg -si
+```
+
+#### Manual Install
+```bash
+# Clone repository
+git clone https://github.com/ghostkellz/ghostls.git
+cd ghostls
+
+# Run installer
+./install.sh
+
+# Verify installation
+ghostls --version  # Should show: ghostls 0.1.0
+```
+
+### Build from Source
+```bash
+zig build -Drelease-safe
 ```
 
 ### Test
 ```bash
 ./scripts/simple_test.sh  # Run basic LSP protocol test
+./tests/grim_integration_test.sh  # Test Grim integration
 ```
 
 ## 📝 Editor Integration
@@ -95,7 +122,12 @@ require('lspconfig').ghostls.setup{
 
 ### Grim Editor
 
-**Status**: ✅ ghostls ready for Grim! Grim needs to add LSP client methods.
+**Status**: ✅ ghostls v0.1.0 ready for Grim integration!
+
+ghostls is fully tested and LSP-compliant. Grim can now:
+- Auto-spawn ghostls for `.gza` files
+- Send LSP requests (hover, definition, completion)
+- Receive clean JSON-RPC responses (stdout verified clean)
 
 See [integrations/grim/README.md](integrations/grim/README.md) for complete implementation guide.
 

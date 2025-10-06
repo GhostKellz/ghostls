@@ -5,27 +5,20 @@ All notable changes to ghostls will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Added - Grim Editor Integration
-- **textDocument/didSave** support for file save notifications
-- Server capabilities now advertise `save: { includeText: true }`
-- Comprehensive Grim integration documentation (`docs/GRIM_INTEGRATION.md`)
-- Example Grim configuration in `.gza` format (`integrations/grim/init.gza`)
-- Detailed Grim LSP client implementation guide with code examples
-- Integration test suite (`tests/grim_integration_test.sh`)
-- Reorganized editor integrations under `integrations/` directory
-
-#### Grim-Specific Features
-- Full compatibility with Grim's existing LSP client (`lsp/client.zig`)
-- Support for Ghostlang-based configuration (not Lua like Neovim)
-- Documentation for required Grim client extensions (completion, hover, definition requests)
-- Example `ServerManager` implementation for spawning ghostls from Grim
-- `.gza` file type support for Grim plugin development
-
 ## [0.1.0] - 2025-10-05
 
-### Added - RC1 Features
+### Added - v0.1.0 Release
+
+#### CLI & Installation
+- **`--version` flag** - Display version information
+- **`--help` flag** - Show comprehensive help message
+- **Installation script** (`install.sh`) - Easy deployment to `/usr/local/bin`
+- **Professional CLI interface** with usage examples and documentation links
+
+#### Logging & LSP Compliance
+- ✅ **stdout CLEAN** - Only JSON-RPC messages (LSP spec compliant)
+- ✅ **stderr for logging** - All debug output goes to stderr (`[ghostls]` prefix)
+- **Verified Grim compatibility** - Tested with Grim's ServerManager
 
 #### Core LSP Protocol
 - **Initialize/Shutdown** - Full LSP handshake implementation
@@ -42,9 +35,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 44 built-in functions (editor APIs, string/array/object utilities)
   - Trigger characters: `.` and `:`
 
+#### Grim Editor Integration
+- **textDocument/didSave** support for file save notifications
+- Server capabilities now advertise `save: { includeText: true }`
+- Comprehensive Grim integration documentation (`docs/GRIM_INTEGRATION.md`)
+- Example Grim configuration in `.gza` format (`integrations/grim/init.gza`)
+- Detailed Grim LSP client implementation guide with code examples
+- Integration test suite (`tests/grim_integration_test.sh`)
+- Full compatibility with Grim's existing LSP client (`lsp/client.zig`)
+- Support for Ghostlang-based configuration (not Lua like Neovim)
+- `.gza` file type support for Grim plugin development
+
 #### Editor Integration
 - **Neovim** - Full nvim-lspconfig setup documentation
-- **Grim** - Integration stubs and documentation (editor in development)
+- **Grim** - Ready for integration (LSP server side complete)
 - **File Types** - Support for `.ghost` and `.gza` file extensions
 
 #### Infrastructure
@@ -62,16 +66,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Technical Details
 
-- **Language**: Zig 0.16.0-dev.164+
+- **Language**: Zig 0.16.0-dev (latest)
 - **Parser**: Grove (Tree-sitter wrapper)
 - **Runtime**: Ghostlang 0.1.0
 - **Protocol**: LSP 3.17 compliant
 - **Dependencies**: grove, ghostlang, zlog
 
 ### Fixed
+- **LSP stdout pollution** - Verified clean JSON-RPC only output (Grim compatibility fix)
 - **InitializeResult serialization** - Now properly returns server capabilities in JSON
 - **Zig 0.16 compatibility** - Updated to new `std.json.Stringify`, `std.Io.Writer`, and `ArrayList` APIs
 - **Memory management** - Proper allocation/deallocation in completions and diagnostics
+- **CLI argument parsing** - Zig 0.16 `std.fs.File.write()` API updates
 
 ### Known Limitations (To be addressed in future releases)
 - Completions are currently static (not context-aware)
