@@ -16,7 +16,7 @@ sha256sums=('SKIP')
 
 build() {
     cd "${srcdir}/${pkgname}"
-    zig build -Drelease-safe
+    zig build -Doptimize=ReleaseSafe
 }
 
 check() {

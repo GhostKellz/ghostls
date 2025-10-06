@@ -96,7 +96,7 @@ ghostls --version  # Should show: ghostls 0.1.0
 
 ### Build from Source
 ```bash
-zig build -Drelease-safe
+zig build -Doptimize=ReleaseSafe
 ```
 
 ### Test
