@@ -6,6 +6,7 @@ const DiagnosticEngine = @import("diagnostics.zig").DiagnosticEngine;
 const HoverProvider = @import("hover_provider.zig").HoverProvider;
 const SymbolProvider = @import("symbol_provider.zig").SymbolProvider;
 const DefinitionProvider = @import("definition_provider.zig").DefinitionProvider;
+const CompletionProvider = @import("completion_provider.zig").CompletionProvider;
 
 pub const Server = struct {
     allocator: std.mem.Allocator,
@@ -16,6 +17,7 @@ pub const Server = struct {
     hover_provider: HoverProvider,
     symbol_provider: SymbolProvider,
     definition_provider: DefinitionProvider,
+    completion_provider: CompletionProvider,
     initialized: bool = false,
     shutdown_requested: bool = false,
 
@@ -29,6 +31,7 @@ pub const Server = struct {
             .hover_provider = HoverProvider.init(allocator),
             .symbol_provider = SymbolProvider.init(allocator),
             .definition_provider = DefinitionProvider.init(allocator),
+            .completion_provider = CompletionProvider.init(allocator),
         };
     }
 
@@ -110,6 +113,8 @@ pub const Server = struct {
             return try self.handleDidOpen(obj.get("params"));
         } else if (std.mem.eql(u8, method_str, protocol.Methods.text_document_did_change)) {
             return try self.handleDidChange(obj.get("params"));
+        } else if (std.mem.eql(u8, method_str, protocol.Methods.text_document_did_save)) {
+            return try self.handleDidSave(obj.get("params"));
         } else if (std.mem.eql(u8, method_str, protocol.Methods.text_document_did_close)) {
             return try self.handleDidClose(obj.get("params"));
         } else if (std.mem.eql(u8, method_str, protocol.Methods.text_document_hover)) {
@@ -121,6 +126,9 @@ pub const Server = struct {
         } else if (std.mem.eql(u8, method_str, protocol.Methods.text_document_document_symbol)) {
             const id = maybe_id orelse return error.InvalidRequest;
             return try self.handleDocumentSymbol(id, obj.get("params"));
+        } else if (std.mem.eql(u8, method_str, protocol.Methods.text_document_completion)) {
+            const id = maybe_id orelse return error.InvalidRequest;
+            return try self.handleCompletion(id, obj.get("params"));
         } else if (std.mem.eql(u8, method_str, protocol.Methods.workspace_did_change_configuration)) {
             return try self.handleDidChangeConfiguration(obj.get("params"));
         } else {
@@ -141,27 +149,34 @@ pub const Server = struct {
 
         self.transport.log("Handling initialize", .{});
 
-        const result = protocol.InitializeResult{
-            .capabilities = .{
-                .positionEncoding = "utf-16",
-                .textDocumentSync = .{
-                    .openClose = true,
-                    .change = 1, // Full document sync for MVP
-                    .save = null,
-                },
-                .hoverProvider = true,
-                .completionProvider = null,
-                .definitionProvider = true,
-                .referencesProvider = false,
-                .documentSymbolProvider = true,
-            },
-            .serverInfo = .{
-                .name = "ghostls",
-                .version = "0.0.1-alpha",
-            },
-        };
+        // Build InitializeResult JSON manually for compatibility
+        const capabilities_json = try std.fmt.allocPrint(
+            self.allocator,
+            \\{{"positionEncoding":"utf-16","textDocumentSync":{{"openClose":true,"change":1,"save":{{"includeText":true}}}},"hoverProvider":true,"completionProvider":{{"triggerCharacters":[".",":"]}},"definitionProvider":true,"referencesProvider":false,"documentSymbolProvider":true}}
+            ,
+            .{},
+        );
+        defer self.allocator.free(capabilities_json);
 
-        return try self.response_builder.success(self.jsonIdToProtocolId(id), result);
+        const result_json = try std.fmt.allocPrint(
+            self.allocator,
+            \\{{"capabilities":{s},"serverInfo":{{"name":"ghostls","version":"0.0.1-alpha"}}}}
+            ,
+            .{capabilities_json},
+        );
+        defer self.allocator.free(result_json);
+
+        const id_str = switch (self.jsonIdToProtocolId(id)) {
+            .integer => |i| try std.fmt.allocPrint(self.allocator, "{d}", .{i}),
+            .string => |s| try std.fmt.allocPrint(self.allocator, "\"{s}\"", .{s}),
+        };
+        defer self.allocator.free(id_str);
+
+        return try std.fmt.allocPrint(
+            self.allocator,
+            "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{s}}}",
+            .{ id_str, result_json },
+        );
     }
 
     fn handleInitialized(self: *Server) !?[]const u8 {
@@ -223,6 +238,25 @@ pub const Server = struct {
                 // Publish diagnostics
                 try self.publishDiagnostics(uri);
             }
+        }
+        return null;
+    }
+
+    fn handleDidSave(self: *Server, params: ?std.json.Value) !?[]const u8 {
+        if (params) |p| {
+            const text_document = p.object.get("textDocument") orelse return error.InvalidParams;
+            const uri = text_document.object.get("uri") orelse return error.InvalidParams;
+
+            self.transport.log("Document saved: {s}", .{uri.string});
+
+            // If includeText is true, the text will be in params.text
+            if (p.object.get("text")) |text_value| {
+                self.transport.log("Save included text of length: {d}", .{text_value.string.len});
+                // Could re-parse if needed, but we already have latest from didChange
+            }
+
+            // Optionally re-run diagnostics on save (already done on didChange)
+            // For now, just log the save event
         }
         return null;
     }
@@ -553,6 +587,89 @@ pub const Server = struct {
         }
 
         return try result.toOwnedSlice(self.allocator);
+    }
+
+    fn handleCompletion(self: *Server, id: std.json.Value, params: ?std.json.Value) ![]const u8 {
+        if (params) |p| {
+            const text_document = p.object.get("textDocument") orelse return error.InvalidParams;
+            const uri = text_document.object.get("uri") orelse return error.InvalidParams;
+            const position = p.object.get("position") orelse return error.InvalidParams;
+
+            const line = @as(u32, @intCast(position.object.get("line").?.integer));
+            const character = @as(u32, @intCast(position.object.get("character").?.integer));
+
+            self.transport.log("Completion requested: {s} at {d}:{d}", .{ uri.string, line, character });
+
+            const doc = self.document_manager.get(uri.string) orelse {
+                return try self.response_builder.success(self.jsonIdToProtocolId(id), null);
+            };
+
+            if (doc.tree) |*tree| {
+                const items = try self.completion_provider.complete(tree, doc.text, .{
+                    .line = line,
+                    .character = character,
+                });
+                defer self.completion_provider.freeCompletions(items);
+
+                // Build completion items JSON array
+                var items_json: std.ArrayList(u8) = .empty;
+                defer items_json.deinit(self.allocator);
+
+                try items_json.appendSlice(self.allocator, "[");
+                for (items, 0..) |item, i| {
+                    if (i > 0) try items_json.appendSlice(self.allocator, ",");
+
+                    const label_escaped = try self.escapeJson(item.label);
+                    defer self.allocator.free(label_escaped);
+
+                    const detail_str = if (item.detail) |detail| blk: {
+                        const detail_escaped = try self.escapeJson(detail);
+                        defer self.allocator.free(detail_escaped);
+                        break :blk try std.fmt.allocPrint(
+                            self.allocator,
+                            ",\"detail\":\"{s}\"",
+                            .{detail_escaped},
+                        );
+                    } else try self.allocator.dupe(u8, "");
+                    defer self.allocator.free(detail_str);
+
+                    const doc_str = if (item.documentation) |documentation| blk: {
+                        const doc_escaped = try self.escapeJson(documentation);
+                        defer self.allocator.free(doc_escaped);
+                        break :blk try std.fmt.allocPrint(
+                            self.allocator,
+                            ",\"documentation\":\"{s}\"",
+                            .{doc_escaped},
+                        );
+                    } else try self.allocator.dupe(u8, "");
+                    defer self.allocator.free(doc_str);
+
+                    const item_json = try std.fmt.allocPrint(
+                        self.allocator,
+                        "{{\"label\":\"{s}\",\"kind\":{d}{s}{s}}}",
+                        .{ label_escaped, @intFromEnum(item.kind), detail_str, doc_str },
+                    );
+                    defer self.allocator.free(item_json);
+
+                    try items_json.appendSlice(self.allocator, item_json);
+                }
+                try items_json.appendSlice(self.allocator, "]");
+
+                const id_str = switch (self.jsonIdToProtocolId(id)) {
+                    .integer => |i| try std.fmt.allocPrint(self.allocator, "{d}", .{i}),
+                    .string => |s| try std.fmt.allocPrint(self.allocator, "\"{s}\"", .{s}),
+                };
+                defer self.allocator.free(id_str);
+
+                return try std.fmt.allocPrint(
+                    self.allocator,
+                    "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{s}}}",
+                    .{ id_str, items_json.items },
+                );
+            }
+        }
+
+        return try self.response_builder.success(self.jsonIdToProtocolId(id), null);
     }
 
     /// Helper to convert std.json.Value to protocol ID

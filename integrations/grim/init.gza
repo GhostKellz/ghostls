@@ -1,0 +1,180 @@
+-- Grim Editor Configuration
+-- This file demonstrates how to configure Grim with Ghostls LSP support
+-- Location: ~/.config/grim/init.gza
+
+-- Editor Settings
+set_option("line_numbers", true)
+set_option("relative_line_numbers", false)
+set_option("tab_width", 4)
+set_option("expand_tabs", true)
+set_option("theme", "gruvbox-dark")
+set_option("cursor_line", true)
+set_option("wrap", false)
+
+-- LSP Configuration Module
+local lsp = require("grim.lsp")
+
+-- Configure Ghostls for Ghostlang/GZA files
+lsp.setup("ghostls", {
+    -- Command to spawn Ghostls
+    cmd = { "ghostls" },
+
+    -- File types to attach to
+    filetypes = { "ghostlang", "ghost", "gza" },
+
+    -- Project root detection patterns
+    root_patterns = { ".git", "grim.toml", "build.zig" },
+
+    -- LSP settings
+    settings = {
+        ghostls = {
+            -- Enable real-time diagnostics
+            diagnostics = {
+                enable = true,
+                on_save = true,
+            },
+
+            -- Completion settings
+            completion = {
+                enable = true,
+                snippets = true,
+                trigger_characters = { ".", ":" },
+            },
+
+            -- Hover documentation
+            hover = {
+                enable = true,
+            },
+
+            -- Code navigation
+            navigation = {
+                goto_definition = true,
+                document_symbols = true,
+            },
+        }
+    },
+
+    -- Callback when LSP attaches to buffer
+    on_attach = function(client_id, buffer_id)
+        print("Ghostls attached to buffer " .. tostring(buffer_id))
+
+        -- Set up buffer-local keybindings
+        local keymap = register_keymap
+        local opts = { buffer = buffer_id, silent = true }
+
+        -- Navigation
+        keymap("n", "gd", ":LspGotoDefinition<CR>", opts)
+        keymap("n", "gr", ":LspReferences<CR>", opts)
+        keymap("n", "K", ":LspHover<CR>", opts)
+
+        -- Diagnostics
+        keymap("n", "[d", ":LspPrevDiagnostic<CR>", opts)
+        keymap("n", "]d", ":LspNextDiagnostic<CR>", opts)
+        keymap("n", "<leader>d", ":LspShowDiagnostics<CR>", opts)
+
+        -- Code actions
+        keymap("n", "<leader>ca", ":LspCodeAction<CR>", opts)
+        keymap("n", "<leader>rn", ":LspRename<CR>", opts)
+
+        -- Formatting
+        keymap("n", "<leader>f", ":LspFormat<CR>", opts)
+    end,
+})
+
+-- Configure ZLS for Zig files
+lsp.setup("zls", {
+    cmd = { "zls" },
+    filetypes = { "zig" },
+    root_patterns = { "build.zig", "build.zig.zon", ".git" },
+})
+
+-- Global LSP Keybindings (all modes)
+function setup_global_lsp_keys()
+    local keymap = register_keymap
+
+    -- LSP management
+    keymap("n", "<leader>li", ":LspInfo<CR>", { desc = "LSP Info" })
+    keymap("n", "<leader>lr", ":LspRestart<CR>", { desc = "Restart LSP" })
+    keymap("n", "<leader>ll", ":LspLog<CR>", { desc = "Show LSP log" })
+
+    -- Workspace
+    keymap("n", "<leader>ws", ":LspWorkspaceSymbol<CR>", { desc = "Workspace symbols" })
+end
+
+setup_global_lsp_keys()
+
+-- Auto-format on save for .gza files
+register_event_handler("buffer_save", function(buffer_id)
+    local filetype = get_buffer_filetype(buffer_id)
+
+    if filetype == "ghostlang" or filetype == "gza" then
+        if lsp.has_formatter(buffer_id) then
+            print("Formatting buffer...")
+            lsp.format(buffer_id)
+        end
+    end
+end)
+
+-- Show diagnostics in status line
+register_event_handler("cursor_moved", function(buffer_id)
+    local diagnostics = lsp.get_diagnostics_at_cursor(buffer_id)
+
+    if diagnostics and #diagnostics > 0 then
+        set_statusline_message(diagnostics[1].message)
+    else
+        set_statusline_message("")
+    end
+end)
+
+-- Custom commands for Grim
+register_command("GhostlsRestart", function()
+    lsp.restart_server("ghostls")
+    print("Ghostls restarted")
+end)
+
+register_command("GhostlsVersion", function()
+    local version = lsp.server_version("ghostls")
+    print("Ghostls version: " .. tostring(version))
+end)
+
+-- Completion configuration
+set_option("completion", {
+    enabled = true,
+    auto_trigger = true,
+    min_chars = 2,
+    sources = {
+        { name = "lsp", priority = 100 },
+        { name = "buffer", priority = 50 },
+        { name = "path", priority = 40 },
+    },
+})
+
+-- Diagnostic display configuration
+set_option("diagnostics", {
+    signs = {
+        error = "✗",
+        warning = "⚠",
+        info = "ℹ",
+        hint = "💡",
+    },
+    virtual_text = {
+        enabled = true,
+        prefix = "●",
+    },
+    update_in_insert = false,
+    severity_sort = true,
+})
+
+-- Theme configuration for LSP highlights
+set_highlight("LspReferenceText", { bg = "#3a3a3a" })
+set_highlight("LspReferenceRead", { bg = "#3a3a3a" })
+set_highlight("LspReferenceWrite", { bg = "#4a4a4a", bold = true })
+
+-- Hover window configuration
+set_option("hover", {
+    border = "rounded",
+    max_width = 80,
+    max_height = 20,
+})
+
+print("Grim initialized with Ghostls LSP support ✓")

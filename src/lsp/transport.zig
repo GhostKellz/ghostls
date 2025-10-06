@@ -110,20 +110,30 @@ pub const ResponseBuilder = struct {
         return .{ .allocator = allocator };
     }
 
-    /// Build a success response (simplified for MVP)
+    /// Build a success response
     pub fn success(self: ResponseBuilder, id: protocol.RequestMessage.Id, result: anytype) ![]const u8 {
-        _ = result; // Will implement full serialization later
-
         const id_str = switch (id) {
             .integer => |i| try std.fmt.allocPrint(self.allocator, "{d}", .{i}),
             .string => |s| try std.fmt.allocPrint(self.allocator, "\"{s}\"", .{s}),
         };
         defer self.allocator.free(id_str);
 
+        // Serialize result to JSON
+        const result_str = if (@TypeOf(result) == @TypeOf(null))
+            try self.allocator.dupe(u8, "null")
+        else blk: {
+            var json_buf: std.ArrayList(u8) = .empty;
+            errdefer json_buf.deinit(self.allocator);
+            var allocating_writer = std.Io.Writer.Allocating.fromArrayList(self.allocator, &json_buf);
+            try std.json.Stringify.value(result, .{}, &allocating_writer.writer);
+            break :blk try json_buf.toOwnedSlice(self.allocator);
+        };
+        defer self.allocator.free(result_str);
+
         return try std.fmt.allocPrint(
             self.allocator,
-            "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":null}}",
-            .{id_str},
+            "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{s}}}",
+            .{ id_str, result_str },
         );
     }
 

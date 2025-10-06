@@ -186,6 +186,7 @@ pub const Methods = struct {
     pub const exit = "exit";
     pub const text_document_did_open = "textDocument/didOpen";
     pub const text_document_did_change = "textDocument/didChange";
+    pub const text_document_did_save = "textDocument/didSave";
     pub const text_document_did_close = "textDocument/didClose";
     pub const text_document_hover = "textDocument/hover";
     pub const text_document_definition = "textDocument/definition";

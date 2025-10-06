@@ -67,10 +67,58 @@ It provides rich editor features — syntax highlighting, document symbols, navi
 ```bash
 zig build -Drelease-safe
 ```
+
 ### Run
 ```bash
-./zig-out/bin/ghostls
+./zig-out/bin/ghostls  # Starts LSP server on stdio
 ```
+
+### Test
+```bash
+./scripts/simple_test.sh  # Run basic LSP protocol test
+```
+
+## 📝 Editor Integration
+
+### Neovim
+
+See [integrations/nvim/README.md](integrations/nvim/README.md) for full setup instructions.
+
+**Quick setup with nvim-lspconfig:**
+
+```lua
+require('lspconfig').ghostls.setup{
+  cmd = { 'ghostls' },
+  filetypes = { 'ghostlang', 'ghost', 'gza' },
+}
+```
+
+### Grim Editor
+
+**Status**: ✅ ghostls ready for Grim! Grim needs to add LSP client methods.
+
+See [integrations/grim/README.md](integrations/grim/README.md) for complete implementation guide.
+
+**Quick config example** (`.gza` format):
+
+```ghostlang
+-- ~/.config/grim/init.gza
+local lsp = require("grim.lsp")
+
+lsp.setup("ghostls", {
+    cmd = { "ghostls" },
+    filetypes = { "ghostlang", "gza" },
+})
+
+register_keymap("n", "gd", ":LspGotoDefinition<CR>")
+register_keymap("n", "K", ":LspHover<CR>")
+```
+
+📖 **Full integration guide**: [docs/GRIM_INTEGRATION.md](docs/GRIM_INTEGRATION.md)
+
+### VS Code
+
+VS Code extension coming in future releases.
 
 ## 📦 Using ghostls as a Zig dependency
 
