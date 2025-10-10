@@ -78,6 +78,11 @@ pub const ServerCapabilities = struct {
     documentSymbolProvider: ?bool = null,
     workspaceSymbolProvider: ?bool = null,
     semanticTokensProvider: ?SemanticTokensOptions = null,
+    codeActionProvider: ?bool = null,
+    renameProvider: ?RenameOptions = null,
+    signatureHelpProvider: ?SignatureHelpOptions = null,
+    inlayHintProvider: ?bool = null,
+    selectionRangeProvider: ?bool = null,
 
     pub const TextDocumentSyncOptions = struct {
         openClose: ?bool = null,
@@ -103,6 +108,15 @@ pub const ServerCapabilities = struct {
             tokenTypes: []const []const u8,
             tokenModifiers: []const []const u8,
         };
+    };
+
+    pub const RenameOptions = struct {
+        prepareProvider: ?bool = null,
+    };
+
+    pub const SignatureHelpOptions = struct {
+        triggerCharacters: ?[]const []const u8 = null,
+        retriggerCharacters: ?[]const []const u8 = null,
     };
 };
 
@@ -193,8 +207,16 @@ pub const Methods = struct {
     pub const text_document_references = "textDocument/references";
     pub const text_document_document_symbol = "textDocument/documentSymbol";
     pub const text_document_completion = "textDocument/completion";
+    pub const text_document_semantic_tokens_full = "textDocument/semanticTokens/full";
+    pub const text_document_code_action = "textDocument/codeAction";
+    pub const text_document_rename = "textDocument/rename";
+    pub const text_document_prepare_rename = "textDocument/prepareRename";
+    pub const text_document_signature_help = "textDocument/signatureHelp";
+    pub const text_document_inlay_hint = "textDocument/inlayHint";
+    pub const text_document_selection_range = "textDocument/selectionRange";
     pub const workspace_symbol = "workspace/symbol";
     pub const workspace_did_change_configuration = "workspace/didChangeConfiguration";
+    pub const workspace_did_change_watched_files = "workspace/didChangeWatchedFiles";
 };
 
 // Hover

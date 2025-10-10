@@ -1,7 +1,7 @@
 const std = @import("std");
 const Server = @import("lsp/server.zig").Server;
 
-const VERSION = "0.1.0";
+const VERSION = "0.3.0";
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -48,7 +48,7 @@ pub fn main() !void {
 fn printHelp() !void {
     const stderr = std.fs.File{ .handle = std.posix.STDERR_FILENO };
     _ = try stderr.write(
-        \\ghostls 0.1.0 - Language Server for Ghostlang
+        \\ghostls 0.3.0 - Language Server for Ghostlang
         \\
         \\USAGE:
         \\    ghostls [OPTIONS]

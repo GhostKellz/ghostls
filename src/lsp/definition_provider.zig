@@ -2,7 +2,7 @@ const std = @import("std");
 const grove = @import("grove");
 const protocol = @import("protocol.zig");
 
-/// DefinitionProvider finds symbol definitions
+/// DefinitionProvider finds symbol definitions (single-file and cross-file)
 pub const DefinitionProvider = struct {
     allocator: std.mem.Allocator,
 
@@ -10,7 +10,7 @@ pub const DefinitionProvider = struct {
         return .{ .allocator = allocator };
     }
 
-    /// Find the definition of a symbol at the given position
+    /// Find the definition of a symbol at the given position (single file)
     pub fn findDefinition(
         self: *DefinitionProvider,
         tree: *const grove.Tree,
@@ -56,6 +56,66 @@ pub const DefinitionProvider = struct {
             .range = nodeToRange(def_node),
         };
     }
+
+    /// Find definition across multiple files (workspace-wide)
+    pub fn findDefinitionCrossFile(
+        self: *DefinitionProvider,
+        trees: []const TreeWithUri,
+        current_uri: []const u8,
+        position: protocol.Position,
+    ) !?protocol.Location {
+        _ = self;
+
+        // First, get the identifier at the current position
+        var identifier: []const u8 = undefined;
+        for (trees) |tree_info| {
+            if (std.mem.eql(u8, tree_info.uri, current_uri)) {
+                const root_opt = tree_info.tree.rootNode();
+                if (root_opt == null) continue;
+
+                const node_opt = findNodeAtPosition(root_opt.?, position);
+                if (node_opt == null) continue;
+
+                const node = node_opt.?;
+                const kind = node.kind();
+
+                if (!std.mem.eql(u8, kind, "identifier") and
+                    !std.mem.eql(u8, kind, "type_identifier")) {
+                    continue;
+                }
+
+                const start_byte = node.startByte();
+                const end_byte = node.endByte();
+                if (end_byte <= start_byte or end_byte > tree_info.text.len) continue;
+
+                identifier = tree_info.text[start_byte..end_byte];
+                break;
+            }
+        }
+
+        if (identifier.len == 0) return null;
+
+        // Search all files for the definition, starting with current file
+        for (trees) |tree_info| {
+            const root_opt = tree_info.tree.rootNode();
+            if (root_opt == null) continue;
+
+            if (findDeclaration(root_opt.?, identifier, tree_info.text)) |def_node| {
+                return protocol.Location{
+                    .uri = tree_info.uri,
+                    .range = nodeToRange(def_node),
+                };
+            }
+        }
+
+        return null;
+    }
+
+    pub const TreeWithUri = struct {
+        uri: []const u8,
+        tree: *const grove.Tree,
+        text: []const u8,
+    };
 
     /// Find a declaration for the given identifier
     fn findDeclaration(
