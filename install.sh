@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-VERSION="0.1.0"
+VERSION="0.3.0"
 REPO="https://github.com/ghostkellz/ghostls.git"
 BINARY_NAME="ghostls"
 
