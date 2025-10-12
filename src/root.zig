@@ -5,6 +5,8 @@ const std = @import("std");
 // Export LSP namespace for library consumers and tests
 pub const lsp = struct {
     pub const protocol = @import("lsp/protocol.zig");
+    pub const ffi_loader = @import("lsp/ffi_loader.zig");
+    pub const HoverProvider = @import("lsp/hover_provider.zig").HoverProvider;
     pub const ReferencesProvider = @import("lsp/references_provider.zig").ReferencesProvider;
     pub const WorkspaceSymbolProvider = @import("lsp/workspace_symbol_provider.zig").WorkspaceSymbolProvider;
     pub const CompletionProvider = @import("lsp/completion_provider.zig").CompletionProvider;

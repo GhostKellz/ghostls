@@ -1,0 +1,517 @@
+{
+  "version": "0.1.0",
+  "description": "GShell FFI definitions for ghostls language server",
+  "namespaces": {
+    "shell": {
+      "description": "Core shell control and manipulation functions",
+      "functions": {
+        "alias": {
+          "signature": "(name: string, command: string) -> void",
+          "description": "Create a shell alias that expands to a command",
+          "parameters": [
+            {
+              "name": "name",
+              "type": "string",
+              "description": "The alias name"
+            },
+            {
+              "name": "command",
+              "type": "string",
+              "description": "The command to expand to"
+            }
+          ],
+          "returns": {
+            "type": "void"
+          },
+          "examples": [
+            "shell.alias('ll', 'ls -lah')",
+            "shell.alias('gst', 'git status')"
+          ]
+        },
+        "setenv": {
+          "signature": "(key: string, value: string) -> void",
+          "description": "Set an environment variable",
+          "parameters": [
+            {
+              "name": "key",
+              "type": "string",
+              "description": "The environment variable name"
+            },
+            {
+              "name": "value",
+              "type": "string",
+              "description": "The value to set"
+            }
+          ],
+          "returns": {
+            "type": "void"
+          },
+          "examples": [
+            "shell.setenv('EDITOR', 'grim')",
+            "shell.setenv('PATH', '/usr/bin:/usr/local/bin')"
+          ]
+        },
+        "getenv": {
+          "signature": "(key: string) -> string | nil",
+          "description": "Get the value of an environment variable",
+          "parameters": [
+            {
+              "name": "key",
+              "type": "string",
+              "description": "The environment variable name"
+            }
+          ],
+          "returns": {
+            "type": "string | nil",
+            "description": "The variable value, or nil if not set"
+          },
+          "examples": [
+            "local editor = shell.getenv('EDITOR')",
+            "if shell.getenv('DEBUG') then print('Debug mode') end"
+          ]
+        },
+        "exec": {
+          "signature": "(command: string) -> number",
+          "description": "Execute a shell command and return its exit code",
+          "parameters": [
+            {
+              "name": "command",
+              "type": "string",
+              "description": "The command to execute"
+            }
+          ],
+          "returns": {
+            "type": "number",
+            "description": "The exit code of the command"
+          },
+          "examples": [
+            "shell.exec('git status')",
+            "local code = shell.exec('make build')"
+          ]
+        },
+        "cd": {
+          "signature": "(path: string) -> boolean",
+          "description": "Change the current working directory",
+          "parameters": [
+            {
+              "name": "path",
+              "type": "string",
+              "description": "The directory path to change to"
+            }
+          ],
+          "returns": {
+            "type": "boolean",
+            "description": "true if successful, false otherwise"
+          },
+          "examples": [
+            "shell.cd('/tmp')",
+            "if shell.cd('~/projects') then print('Changed directory') end"
+          ]
+        },
+        "command_exists": {
+          "signature": "(cmd: string) -> boolean",
+          "description": "Check if a command exists in PATH",
+          "parameters": [
+            {
+              "name": "cmd",
+              "type": "string",
+              "description": "The command name to check"
+            }
+          ],
+          "returns": {
+            "type": "boolean",
+            "description": "true if command exists, false otherwise"
+          },
+          "examples": [
+            "if shell.command_exists('git') then print('Git is installed') end",
+            "shell.command_exists('starship')"
+          ]
+        },
+        "read_file": {
+          "signature": "(path: string) -> string | nil",
+          "description": "Read the contents of a file",
+          "parameters": [
+            {
+              "name": "path",
+              "type": "string",
+              "description": "The file path to read"
+            }
+          ],
+          "returns": {
+            "type": "string | nil",
+            "description": "The file contents, or nil on error"
+          },
+          "examples": [
+            "local content = shell.read_file('.gitignore')",
+            "local config = shell.read_file('~/.config/app.conf')"
+          ]
+        },
+        "write_file": {
+          "signature": "(path: string, content: string) -> boolean",
+          "description": "Write content to a file",
+          "parameters": [
+            {
+              "name": "path",
+              "type": "string",
+              "description": "The file path to write to"
+            },
+            {
+              "name": "content",
+              "type": "string",
+              "description": "The content to write"
+            }
+          ],
+          "returns": {
+            "type": "boolean",
+            "description": "true if successful, false otherwise"
+          },
+          "examples": [
+            "shell.write_file('/tmp/test.txt', 'Hello World')",
+            "shell.write_file('output.log', log_data)"
+          ]
+        },
+        "path_exists": {
+          "signature": "(path: string) -> boolean",
+          "description": "Check if a file or directory exists",
+          "parameters": [
+            {
+              "name": "path",
+              "type": "string",
+              "description": "The path to check"
+            }
+          ],
+          "returns": {
+            "type": "boolean",
+            "description": "true if path exists, false otherwise"
+          },
+          "examples": [
+            "if shell.path_exists('.git') then print('Git repo') end",
+            "shell.path_exists('/etc/hosts')"
+          ]
+        },
+        "enable_plugin": {
+          "signature": "(name: string) -> boolean",
+          "description": "Load and enable a GShell plugin",
+          "parameters": [
+            {
+              "name": "name",
+              "type": "string",
+              "description": "The plugin name to enable"
+            }
+          ],
+          "returns": {
+            "type": "boolean",
+            "description": "true if plugin loaded successfully, false otherwise"
+          },
+          "examples": [
+            "shell.enable_plugin('git')",
+            "shell.enable_plugin('docker')"
+          ]
+        },
+        "use_starship": {
+          "signature": "(enabled: boolean) -> void",
+          "description": "Enable or disable Starship prompt integration",
+          "parameters": [
+            {
+              "name": "enabled",
+              "type": "boolean",
+              "description": "true to enable Starship, false to use default prompt"
+            }
+          ],
+          "returns": {
+            "type": "void"
+          },
+          "examples": [
+            "shell.use_starship(true)",
+            "if shell.command_exists('starship') then shell.use_starship(true) end"
+          ]
+        },
+        "load_vivid_theme": {
+          "signature": "(theme: string) -> boolean",
+          "description": "Load a Vivid color theme for ls output",
+          "parameters": [
+            {
+              "name": "theme",
+              "type": "string",
+              "description": "The Vivid theme name"
+            }
+          ],
+          "returns": {
+            "type": "boolean",
+            "description": "true if theme loaded successfully, false otherwise"
+          },
+          "examples": [
+            "shell.load_vivid_theme('ghost-hacker-blue')",
+            "shell.load_vivid_theme('dracula')"
+          ]
+        },
+        "set_history_size": {
+          "signature": "(size: number) -> void",
+          "description": "Set the maximum number of history entries to keep",
+          "parameters": [
+            {
+              "name": "size",
+              "type": "number",
+              "description": "The maximum history size"
+            }
+          ],
+          "returns": {
+            "type": "void"
+          },
+          "examples": [
+            "shell.set_history_size(10000)",
+            "shell.set_history_size(5000)"
+          ]
+        },
+        "set_history_file": {
+          "signature": "(path: string) -> void",
+          "description": "Set the path to the history file",
+          "parameters": [
+            {
+              "name": "path",
+              "type": "string",
+              "description": "The history file path"
+            }
+          ],
+          "returns": {
+            "type": "void"
+          },
+          "examples": [
+            "shell.set_history_file('~/.gshell_history')",
+            "shell.set_history_file(shell.getenv('HOME') .. '/.history')"
+          ]
+        },
+        "get_user": {
+          "signature": "() -> string",
+          "description": "Get the current username",
+          "parameters": [],
+          "returns": {
+            "type": "string",
+            "description": "The current username"
+          },
+          "examples": [
+            "local user = shell.get_user()",
+            "print('Hello, ' .. shell.get_user())"
+          ]
+        },
+        "get_hostname": {
+          "signature": "() -> string",
+          "description": "Get the system hostname",
+          "parameters": [],
+          "returns": {
+            "type": "string",
+            "description": "The system hostname"
+          },
+          "examples": [
+            "local host = shell.get_hostname()",
+            "print('Running on: ' .. shell.get_hostname())"
+          ]
+        },
+        "get_cwd": {
+          "signature": "() -> string",
+          "description": "Get the current working directory",
+          "parameters": [],
+          "returns": {
+            "type": "string",
+            "description": "The current working directory path"
+          },
+          "examples": [
+            "local cwd = shell.get_cwd()",
+            "print('Working in: ' .. shell.get_cwd())"
+          ]
+        },
+        "prompt_format": {
+          "signature": "(format: string) -> void",
+          "description": "Set the shell prompt format string. Format codes: %u (username), %h (hostname), %w (working directory), %t (time)",
+          "parameters": [
+            {
+              "name": "format",
+              "type": "string",
+              "description": "The prompt format string with placeholders"
+            }
+          ],
+          "returns": {
+            "type": "void"
+          },
+          "examples": [
+            "shell.prompt_format('[%u@%h %w]$ ')",
+            "shell.prompt_format('> ')"
+          ]
+        },
+        "on_prompt": {
+          "signature": "(callback: function(): string) -> void",
+          "description": "Register a callback function to generate dynamic prompts",
+          "parameters": [
+            {
+              "name": "callback",
+              "type": "function(): string",
+              "description": "A function that returns the prompt string"
+            }
+          ],
+          "returns": {
+            "type": "void"
+          },
+          "examples": [
+            "shell.on_prompt(function() return git.current_branch() .. '$ ' end)",
+            "shell.on_prompt(function() return os.date('%H:%M') .. '> ' end)"
+          ]
+        },
+        "register_completer": {
+          "signature": "(command: string, completer: function(args: string[]): string[]) -> void",
+          "description": "Register a custom tab completion handler for a command",
+          "parameters": [
+            {
+              "name": "command",
+              "type": "string",
+              "description": "The command to register completions for"
+            },
+            {
+              "name": "completer",
+              "type": "function(args: string[]): string[]",
+              "description": "A function that returns completion suggestions"
+            }
+          ],
+          "returns": {
+            "type": "void"
+          },
+          "examples": [
+            "shell.register_completer('git', function(args) return {'add', 'commit', 'push'} end)"
+          ]
+        }
+      },
+      "globals": {
+        "SHELL_VERSION": {
+          "type": "string",
+          "description": "GShell version string (e.g., '0.1.0')",
+          "readonly": true
+        },
+        "SHELL_PID": {
+          "type": "number",
+          "description": "Current shell process ID",
+          "readonly": true
+        },
+        "HOME": {
+          "type": "string",
+          "description": "User home directory path",
+          "readonly": true
+        },
+        "PWD": {
+          "type": "string",
+          "description": "Current working directory path",
+          "readonly": false
+        },
+        "PATH": {
+          "type": "string",
+          "description": "Executable search path (colon-separated)",
+          "readonly": false
+        }
+      }
+    },
+    "git": {
+      "description": "Git repository integration functions",
+      "functions": {
+        "current_branch": {
+          "signature": "() -> string | nil",
+          "description": "Get the current git branch name, or nil if not in a git repository",
+          "parameters": [],
+          "returns": {
+            "type": "string | nil",
+            "description": "The current branch name, or nil if not in a git repo"
+          },
+          "examples": [
+            "local branch = git.current_branch()",
+            "if git.current_branch() then print('On branch: ' .. git.current_branch()) end"
+          ]
+        },
+        "is_dirty": {
+          "signature": "() -> boolean",
+          "description": "Check if the git repository has uncommitted changes",
+          "parameters": [],
+          "returns": {
+            "type": "boolean",
+            "description": "true if there are uncommitted changes, false otherwise"
+          },
+          "examples": [
+            "if git.is_dirty() then print('*') end",
+            "local dirty = git.is_dirty()"
+          ]
+        },
+        "ahead_behind": {
+          "signature": "() -> {ahead: number, behind: number} | nil",
+          "description": "Get the number of commits ahead/behind the remote branch",
+          "parameters": [],
+          "returns": {
+            "type": "{ahead: number, behind: number} | nil",
+            "description": "Table with ahead and behind counts, or nil if not tracking a remote"
+          },
+          "examples": [
+            "local status = git.ahead_behind()",
+            "if status and status.ahead > 0 then print('↑' .. status.ahead) end"
+          ]
+        },
+        "in_git_repo": {
+          "signature": "() -> boolean",
+          "description": "Check if the current directory is inside a git repository",
+          "parameters": [],
+          "returns": {
+            "type": "boolean",
+            "description": "true if in a git repository, false otherwise"
+          },
+          "examples": [
+            "if git.in_git_repo() then print('Git repo detected') end",
+            "local is_repo = git.in_git_repo()"
+          ]
+        },
+        "git_branch": {
+          "signature": "() -> string | nil",
+          "description": "Alias for current_branch() - get the current git branch name",
+          "parameters": [],
+          "returns": {
+            "type": "string | nil",
+            "description": "The current branch name, or nil if not in a git repo"
+          },
+          "examples": [
+            "local branch = git.git_branch()",
+            "print('Branch: ' .. (git.git_branch() or 'none'))"
+          ]
+        },
+        "git_dirty": {
+          "signature": "() -> boolean",
+          "description": "Alias for is_dirty() - check if repository has uncommitted changes",
+          "parameters": [],
+          "returns": {
+            "type": "boolean",
+            "description": "true if there are uncommitted changes, false otherwise"
+          },
+          "examples": [
+            "local dirty = git.git_dirty()",
+            "if git.git_dirty() then print('Uncommitted changes') end"
+          ]
+        },
+        "git_repo_root": {
+          "signature": "() -> string | nil",
+          "description": "Get the root directory of the git repository",
+          "parameters": [],
+          "returns": {
+            "type": "string | nil",
+            "description": "The absolute path to the repository root, or nil if not in a git repo"
+          },
+          "examples": [
+            "local root = git.git_repo_root()",
+            "if root then shell.cd(root) end"
+          ]
+        }
+      }
+    }
+  },
+  "file_associations": {
+    "ghostlang": [".gza", ".ghost"],
+    "gshell_config": [".gshrc.gza", ".gshrc"],
+    "gshell_script": [".gsh"]
+  },
+  "notes": [
+    "All shell.* functions are available in .gshrc.gza and .gsh files",
+    "git.* functions require the git command to be available in PATH",
+    "Functions that return nil indicate an error or unsupported operation"
+  ]
+}

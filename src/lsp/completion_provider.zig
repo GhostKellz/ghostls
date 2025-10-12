@@ -1,12 +1,18 @@
 const std = @import("std");
 const protocol = @import("protocol.zig");
 const grove = @import("grove");
+const ffi_loader = @import("ffi_loader.zig");
+const DocumentManager = @import("document_manager.zig").DocumentManager;
 
 pub const CompletionProvider = struct {
     allocator: std.mem.Allocator,
+    ffi_loader: *ffi_loader.FFILoader,
 
-    pub fn init(allocator: std.mem.Allocator) CompletionProvider {
-        return .{ .allocator = allocator };
+    pub fn init(allocator: std.mem.Allocator, ffi: *ffi_loader.FFILoader) CompletionProvider {
+        return .{
+            .allocator = allocator,
+            .ffi_loader = ffi,
+        };
     }
 
     /// Get completion items at the given position
@@ -15,6 +21,7 @@ pub const CompletionProvider = struct {
         tree: *grove.Tree,
         text: []const u8,
         position: protocol.Position,
+        supports_shell_ffi: bool,
     ) ![]CompletionItem {
         var items: std.ArrayList(CompletionItem) = .empty;
         errdefer items.deinit(self.allocator);
@@ -25,27 +32,46 @@ pub const CompletionProvider = struct {
         // Filter completions based on context
         switch (context.kind) {
             .AfterDot => {
-                // After '.' - show object methods/properties
-                try addObjectMethodCompletions(self.allocator, &items);
+                // Check if we're after "shell." or "git." namespace
+                if (context.namespace) |ns| {
+                    if (supports_shell_ffi) {
+                        try self.addFFICompletions(ns, &items);
+                    }
+                } else {
+                    // Regular object methods
+                    try addObjectMethodCompletions(self.allocator, &items);
+                }
             },
             .AfterColon => {
                 // After ':' - show type members (future)
                 try addBuiltinCompletions(self.allocator, &items);
+                if (supports_shell_ffi) {
+                    try self.addShellGlobals(&items);
+                }
             },
             .InFunctionBody => {
                 // Inside function - show local vars, params, builtins
                 try addLocalScopeCompletions(self.allocator, &items, context.scope_vars);
                 try addBuiltinCompletions(self.allocator, &items);
+                if (supports_shell_ffi) {
+                    try self.addShellGlobals(&items);
+                }
             },
             .TopLevel => {
                 // Top-level - show keywords and global functions
                 try addKeywordCompletions(self.allocator, &items);
                 try addBuiltinCompletions(self.allocator, &items);
+                if (supports_shell_ffi) {
+                    try self.addShellGlobals(&items);
+                }
             },
             .Default => {
                 // Default - show everything (fallback to v0.1.0 behavior)
                 try addKeywordCompletions(self.allocator, &items);
                 try addBuiltinCompletions(self.allocator, &items);
+                if (supports_shell_ffi) {
+                    try self.addShellGlobals(&items);
+                }
             },
         }
 
@@ -55,6 +81,7 @@ pub const CompletionProvider = struct {
     const CompletionContext = struct {
         kind: ContextKind,
         scope_vars: []const []const u8 = &.{},
+        namespace: ?[]const u8 = null, // For "shell." or "git." completions
 
         const ContextKind = enum {
             AfterDot,
@@ -78,7 +105,9 @@ pub const CompletionProvider = struct {
         if (offset > 0 and offset <= text.len) {
             const char_before = text[offset - 1];
             if (char_before == '.') {
-                return .{ .kind = .AfterDot };
+                // Check if we're after "shell" or "git" namespace
+                const namespace = try self.detectNamespace(text, offset);
+                return .{ .kind = .AfterDot, .namespace = namespace };
             }
             if (char_before == ':') {
                 return .{ .kind = .AfterColon };
@@ -168,6 +197,89 @@ pub const CompletionProvider = struct {
         }
 
         return try vars.toOwnedSlice(self.allocator);
+    }
+
+    /// Detect if cursor is after a namespace identifier like "shell" or "git"
+    fn detectNamespace(self: *CompletionProvider, text: []const u8, offset: usize) !?[]const u8 {
+        _ = self;
+        // Look backward from the dot to find the identifier
+        if (offset < 2) return null;
+
+        var i = offset - 2; // Skip the dot
+        var end = offset - 1;
+
+        // Skip whitespace
+        while (i > 0 and (text[i] == ' ' or text[i] == '\t')) : (i -= 1) {}
+        end = i + 1;
+
+        // Find start of identifier
+        while (i > 0 and (std.ascii.isAlphanumeric(text[i]) or text[i] == '_')) : (i -= 1) {}
+        if (i > 0 and (std.ascii.isAlphanumeric(text[i]) or text[i] == '_')) {
+            i = 0;
+        } else {
+            i += 1;
+        }
+
+        const identifier = text[i..end];
+
+        // Return const string literals for known namespaces (safer for lifetime)
+        if (std.mem.eql(u8, identifier, "shell")) {
+            return "shell";
+        } else if (std.mem.eql(u8, identifier, "git")) {
+            return "git";
+        }
+
+        return null;
+    }
+
+    /// Add FFI completions for a specific namespace (shell or git)
+    fn addFFICompletions(
+        self: *CompletionProvider,
+        namespace: []const u8,
+        items: *std.ArrayList(CompletionItem),
+    ) !void {
+        const funcs = self.ffi_loader.getFunctions(namespace) orelse return;
+
+        var func_iter = funcs.iterator();
+        while (func_iter.next()) |entry| {
+            const func = entry.value_ptr.*;
+
+            const detail = try self.allocator.dupe(u8, func.signature);
+            const documentation = try self.allocator.dupe(u8, func.description);
+
+            try items.append(self.allocator, .{
+                .label = try self.allocator.dupe(u8, func.name),
+                .kind = .Function,
+                .detail = detail,
+                .documentation = documentation,
+                .insertText = null,
+            });
+        }
+    }
+
+    /// Add shell global variables (SHELL_VERSION, HOME, PATH, etc.)
+    fn addShellGlobals(self: *CompletionProvider, items: *std.ArrayList(CompletionItem)) !void {
+        // Add shell namespace globals
+        if (self.ffi_loader.getGlobals("shell")) |globals| {
+            var global_iter = globals.iterator();
+            while (global_iter.next()) |entry| {
+                const global = entry.value_ptr.*;
+
+                const detail_str = try std.fmt.allocPrint(
+                    self.allocator,
+                    "global: {s}{s}",
+                    .{ global.type, if (global.readonly) " (readonly)" else "" },
+                );
+
+                try items.append(self.allocator, .{
+                    .label = try self.allocator.dupe(u8, global.name),
+                    .kind = .Variable,
+                    .detail = detail_str,
+                    .documentation = try self.allocator.dupe(u8, global.description),
+                    .insertText = null,
+                });
+            }
+        }
     }
 
     fn addLocalScopeCompletions(

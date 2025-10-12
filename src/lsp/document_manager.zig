@@ -2,6 +2,48 @@ const std = @import("std");
 const grove = @import("grove");
 const protocol = @import("protocol.zig");
 
+/// Language type for a document
+pub const LanguageType = enum {
+    ghostlang, // .gza, .ghost files
+    gshell, // .gsh files (pure shell scripts)
+    gshell_config, // .gshrc.gza, .gshrc files (shell config with ghostlang)
+
+    /// Detect language type from URI/filename
+    pub fn fromUri(uri: []const u8) LanguageType {
+        if (std.mem.endsWith(u8, uri, ".gshrc.gza")) {
+            return .gshell_config;
+        } else if (std.mem.endsWith(u8, uri, ".gshrc")) {
+            return .gshell_config;
+        } else if (std.mem.endsWith(u8, uri, ".gsh")) {
+            return .gshell;
+        } else if (std.mem.endsWith(u8, uri, ".gza")) {
+            return .ghostlang;
+        } else if (std.mem.endsWith(u8, uri, ".ghost")) {
+            return .ghostlang;
+        }
+        // Default to ghostlang for unknown extensions
+        return .ghostlang;
+    }
+
+    /// Get the Grove language for this type
+    pub fn getGroveLanguage(self: LanguageType) !grove.Language {
+        return switch (self) {
+            .ghostlang => try grove.Languages.ghostlang.get(),
+            .gshell => try grove.Languages.gshell.get(),
+            .gshell_config => try grove.Languages.ghostlang.get(), // Config files use Ghostlang syntax
+        };
+    }
+
+    /// Check if this language type supports shell FFI
+    pub fn supportsShellFFI(self: LanguageType) bool {
+        return switch (self) {
+            .ghostlang => false,
+            .gshell => true,
+            .gshell_config => true, // .gshrc.gza has full shell FFI access
+        };
+    }
+};
+
 /// Manages open documents and their parse trees
 pub const DocumentManager = struct {
     allocator: std.mem.Allocator,
@@ -13,6 +55,7 @@ pub const DocumentManager = struct {
         version: i32,
         text: []const u8,
         tree: ?grove.Tree,
+        language_type: LanguageType,
 
         pub fn deinit(self: *Document, allocator: std.mem.Allocator) void {
             allocator.free(self.uri);
@@ -24,10 +67,8 @@ pub const DocumentManager = struct {
     };
 
     pub fn init(allocator: std.mem.Allocator) !DocumentManager {
-        // Initialize parser with Ghostlang grammar
-        const ghostlang_language = try grove.Languages.ghostlang.get();
-        var parser = try grove.Parser.init(allocator);
-        try parser.setLanguage(ghostlang_language);
+        // Initialize parser (language will be set per-document)
+        const parser = try grove.Parser.init(allocator);
 
         return .{
             .allocator = allocator,
@@ -47,6 +88,13 @@ pub const DocumentManager = struct {
 
     /// Open a document and parse it
     pub fn open(self: *DocumentManager, uri: []const u8, text: []const u8, version: i32) !void {
+        // Detect language type from URI
+        const lang_type = LanguageType.fromUri(uri);
+
+        // Set appropriate grammar
+        const language = try lang_type.getGroveLanguage();
+        try self.parser.setLanguage(language);
+
         // Parse the document
         const tree = try self.parser.parseUtf8(null, text);
 
@@ -55,6 +103,7 @@ pub const DocumentManager = struct {
             .version = version,
             .text = try self.allocator.dupe(u8, text),
             .tree = tree,
+            .language_type = lang_type,
         };
 
         try self.documents.put(doc.uri, doc);
@@ -71,6 +120,10 @@ pub const DocumentManager = struct {
         if (doc.tree) |*old_tree| {
             old_tree.deinit();
         }
+
+        // Set appropriate grammar based on document's language type
+        const language = try doc.language_type.getGroveLanguage();
+        try self.parser.setLanguage(language);
 
         const new_tree = try self.parser.parseUtf8(null, text);
 

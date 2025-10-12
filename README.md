@@ -83,6 +83,72 @@ Ctrl+T → Search for "my" → Shows:
   - myClass (file:///src/models.gza)
 ```
 
+### ✅ v0.4.0 - GShell Support 🎉
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| 🐚 **Shell FFI Completions** | ✅ | Intelligent completions for `shell.*` and `git.*` functions |
+| 📂 **File Type Detection** | ✅ | Auto-detect `.gshrc.gza`, `.gshrc`, and `.gsh` files |
+| 🔧 **FFI Documentation** | ✅ | Hover documentation for 30+ shell FFI functions |
+| 🌍 **Shell Globals** | ✅ | Completions for `SHELL_VERSION`, `HOME`, `PATH`, etc. |
+| 📖 **Embedded Definitions** | ✅ | Shell FFI definitions embedded in binary (no external files needed) |
+
+ghostls now provides **full language server support for GShell** - the next-generation shell with Ghostlang scripting!
+
+**Example: Shell FFI Completions**
+
+```lua
+-- In ~/.gshrc.gza or *.gsh files
+shell.|
+      ^ Completions show: alias, setenv, getenv, exec, cd, command_exists, ...
+
+git.|
+    ^ Completions show: current_branch, is_dirty, ahead_behind, git_branch, ...
+
+-- Shell global variables
+print(SHELL_VERSION)  -- Auto-complete SHELL_VERSION, HOME, PATH, etc.
+```
+
+**Supported File Types:**
+- `.gshrc.gza` - GShell config with Ghostlang syntax + shell FFI
+- `.gshrc` - Traditional shell config (if you use it)
+- `.gsh` - GShell script files
+- `.gza` - Standard Ghostlang files (no shell FFI)
+- `.ghost` - Standard Ghostlang files (no shell FFI)
+
+**Shell FFI Functions (30+):**
+
+**Core Shell:**
+- `shell.alias(name, command)` - Create shell alias
+- `shell.setenv(key, value)` - Set environment variable
+- `shell.getenv(key)` - Get environment variable
+- `shell.exec(command)` - Execute command
+- `shell.cd(path)` - Change directory
+- `shell.command_exists(cmd)` - Check if command in PATH
+- `shell.read_file(path)` - Read file contents
+- `shell.write_file(path, content)` - Write to file
+- `shell.path_exists(path)` - Check if path exists
+- `shell.enable_plugin(name)` - Load GShell plugin
+- `shell.use_starship(enabled)` - Toggle Starship prompt
+- `shell.load_vivid_theme(theme)` - Load LS_COLORS theme
+- `shell.get_user()` - Get current username
+- `shell.get_hostname()` - Get system hostname
+- `shell.get_cwd()` - Get current working directory
+
+**Git Integration:**
+- `git.current_branch()` - Get current git branch
+- `git.is_dirty()` - Check for uncommitted changes
+- `git.ahead_behind()` - Get commits ahead/behind remote
+- `git.in_git_repo()` - Check if in git repository
+- `git.git_repo_root()` - Get repository root path
+
+**Shell Globals:**
+- `SHELL_VERSION` - GShell version string
+- `SHELL_PID` - Current shell process ID
+- `HOME` - User home directory
+- `PWD` - Current working directory
+- `PATH` - Executable search path
+
 ---
 
 ## 🧱 Architecture

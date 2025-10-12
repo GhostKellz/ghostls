@@ -9,6 +9,7 @@ const DefinitionProvider = @import("definition_provider.zig").DefinitionProvider
 const CompletionProvider = @import("completion_provider.zig").CompletionProvider;
 const ReferencesProvider = @import("references_provider.zig").ReferencesProvider;
 const WorkspaceSymbolProvider = @import("workspace_symbol_provider.zig").WorkspaceSymbolProvider;
+const FFILoader = @import("ffi_loader.zig").FFILoader;
 
 pub const Server = struct {
     allocator: std.mem.Allocator,
@@ -22,28 +23,35 @@ pub const Server = struct {
     completion_provider: CompletionProvider,
     references_provider: ReferencesProvider,
     workspace_symbol_provider: WorkspaceSymbolProvider,
+    ffi_loader: FFILoader,
     initialized: bool = false,
     shutdown_requested: bool = false,
 
     pub fn init(allocator: std.mem.Allocator) !Server {
+        // Initialize FFI loader with embedded definitions
+        var ffi_loader = FFILoader.init(allocator);
+        try ffi_loader.loadEmbedded();
+
         return .{
             .allocator = allocator,
             .transport = transport.Transport.init(allocator),
             .response_builder = transport.ResponseBuilder.init(allocator),
             .document_manager = try DocumentManager.init(allocator),
             .diagnostic_engine = DiagnosticEngine.init(allocator),
-            .hover_provider = HoverProvider.init(allocator),
+            .hover_provider = HoverProvider.init(allocator, &ffi_loader),
             .symbol_provider = SymbolProvider.init(allocator),
             .definition_provider = DefinitionProvider.init(allocator),
-            .completion_provider = CompletionProvider.init(allocator),
+            .completion_provider = CompletionProvider.init(allocator, &ffi_loader),
             .references_provider = ReferencesProvider.init(allocator),
             .workspace_symbol_provider = WorkspaceSymbolProvider.init(allocator),
+            .ffi_loader = ffi_loader,
         };
     }
 
     pub fn deinit(self: *Server) void {
         self.document_manager.deinit();
         self.workspace_symbol_provider.deinit();
+        self.ffi_loader.deinit();
     }
 
     pub fn run(self: *Server) !void {
@@ -325,10 +333,13 @@ pub const Server = struct {
             };
 
             if (doc.tree) |*tree| {
+                // Check if this document supports shell FFI based on file type
+                const supports_ffi = doc.language_type.supportsShellFFI();
+
                 const hover_result = try self.hover_provider.hover(tree, doc.text, .{
                     .line = line,
                     .character = character,
-                });
+                }, supports_ffi);
 
                 if (hover_result) |hover| {
                     defer self.allocator.free(hover.contents.value);
@@ -630,10 +641,15 @@ pub const Server = struct {
             };
 
             if (doc.tree) |*tree| {
-                const items = try self.completion_provider.complete(tree, doc.text, .{
-                    .line = line,
-                    .character = character,
-                });
+                // Check if this document supports shell FFI based on file type
+                const supports_ffi = doc.language_type.supportsShellFFI();
+
+                const items = try self.completion_provider.complete(
+                    tree,
+                    doc.text,
+                    .{ .line = line, .character = character },
+                    supports_ffi,
+                );
                 defer self.completion_provider.freeCompletions(items);
 
                 // Build completion items JSON array

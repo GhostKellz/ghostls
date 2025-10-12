@@ -1,6 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 const CompletionProvider = @import("ghostls").lsp.CompletionProvider;
+const FFILoader = @import("ghostls").lsp.ffi_loader.FFILoader;
 const protocol = @import("ghostls").lsp.protocol;
 const grove = @import("grove");
 
@@ -21,10 +22,13 @@ test "CompletionProvider: trigger after dot" {
     var tree = try parser.parseUtf8(null, source);
     defer tree.deinit();
 
-    var provider = CompletionProvider.init(allocator);
+    var ffi_loader = FFILoader.init(allocator);
+    defer ffi_loader.deinit();
+
+    var provider = CompletionProvider.init(allocator, &ffi_loader);
 
     // Request completions after the dot
-    const items = try provider.complete(&tree, source, .{ .line = 1, .character = 4 });
+    const items = try provider.complete(&tree, source, .{ .line = 1, .character = 4 }, false);
     defer provider.freeCompletions(items);
 
     // Should return method completions (push, pop, length, etc.)
@@ -60,10 +64,13 @@ test "CompletionProvider: inside function body" {
     var tree = try parser.parseUtf8(null, source);
     defer tree.deinit();
 
-    var provider = CompletionProvider.init(allocator);
+    var ffi_loader = FFILoader.init(allocator);
+    defer ffi_loader.deinit();
+
+    var provider = CompletionProvider.init(allocator, &ffi_loader);
 
     // Request completions inside function
-    const items = try provider.complete(&tree, source, .{ .line = 2, .character = 19 });
+    const items = try provider.complete(&tree, source, .{ .line = 2, .character = 19 }, false);
     defer provider.freeCompletions(items);
 
     try testing.expect(items.len > 0);
@@ -93,10 +100,13 @@ test "CompletionProvider: top level context" {
     var tree = try parser.parseUtf8(null, source);
     defer tree.deinit();
 
-    var provider = CompletionProvider.init(allocator);
+    var ffi_loader = FFILoader.init(allocator);
+    defer ffi_loader.deinit();
+
+    var provider = CompletionProvider.init(allocator, &ffi_loader);
 
     // Request completions at top level
-    const items = try provider.complete(&tree, source, .{ .line = 0, .character = 0 });
+    const items = try provider.complete(&tree, source, .{ .line = 0, .character = 0 }, false);
     defer provider.freeCompletions(items);
 
     try testing.expect(items.len > 0);
@@ -132,9 +142,12 @@ test "CompletionProvider: local variable completions" {
     var tree = try parser.parseUtf8(null, source);
     defer tree.deinit();
 
-    var provider = CompletionProvider.init(allocator);
+    var ffi_loader = FFILoader.init(allocator);
+    defer ffi_loader.deinit();
 
-    const items = try provider.complete(&tree, source, .{ .line = 3, .character = 14 });
+    var provider = CompletionProvider.init(allocator, &ffi_loader);
+
+    const items = try provider.complete(&tree, source, .{ .line = 3, .character = 14 }, false);
     defer provider.freeCompletions(items);
 
     try testing.expect(items.len > 0);
@@ -157,12 +170,15 @@ test "CompletionProvider: memory leak check" {
     var tree = try parser.parseUtf8(null, source);
     defer tree.deinit();
 
-    var provider = CompletionProvider.init(allocator);
+    var ffi_loader = FFILoader.init(allocator);
+    defer ffi_loader.deinit();
+
+    var provider = CompletionProvider.init(allocator, &ffi_loader);
 
     // Request completions multiple times to check for leaks
     var i: usize = 0;
     while (i < 10) : (i += 1) {
-        const items = try provider.complete(&tree, source, .{ .line = 1, .character = 12 });
+        const items = try provider.complete(&tree, source, .{ .line = 1, .character = 12 }, false);
         provider.freeCompletions(items);
     }
 }
@@ -181,9 +197,12 @@ test "CompletionProvider: empty source" {
     var tree = try parser.parseUtf8(null, source);
     defer tree.deinit();
 
-    var provider = CompletionProvider.init(allocator);
+    var ffi_loader = FFILoader.init(allocator);
+    defer ffi_loader.deinit();
 
-    const items = try provider.complete(&tree, source, .{ .line = 0, .character = 0 });
+    var provider = CompletionProvider.init(allocator, &ffi_loader);
+
+    const items = try provider.complete(&tree, source, .{ .line = 0, .character = 0 }, false);
     defer provider.freeCompletions(items);
 
     // Should still return some completions (keywords/builtins)

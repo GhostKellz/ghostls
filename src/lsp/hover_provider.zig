@@ -1,13 +1,15 @@
 const std = @import("std");
 const grove = @import("grove");
 const protocol = @import("protocol.zig");
+const ffi_loader = @import("ffi_loader.zig");
 
 /// HoverProvider provides hover information for positions in the document
 pub const HoverProvider = struct {
     allocator: std.mem.Allocator,
+    ffi_loader: *ffi_loader.FFILoader,
 
-    pub fn init(allocator: std.mem.Allocator) HoverProvider {
-        return .{ .allocator = allocator };
+    pub fn init(allocator: std.mem.Allocator, ffi: *ffi_loader.FFILoader) HoverProvider {
+        return .{ .allocator = allocator, .ffi_loader = ffi };
     }
 
     /// Get hover information for a position in the document
@@ -16,6 +18,7 @@ pub const HoverProvider = struct {
         tree: *const grove.Tree,
         text: []const u8,
         position: protocol.Position,
+        supports_shell_ffi: bool,
     ) !?protocol.Hover {
         const root_opt = tree.rootNode();
         if (root_opt == null) return null;
@@ -38,7 +41,7 @@ pub const HoverProvider = struct {
             "";
 
         // Build hover content based on node kind
-        const hover_text = try self.buildHoverContent(kind, node_text, node);
+        const hover_text = try self.buildHoverContent(kind, node_text, node, text, supports_shell_ffi);
 
         return protocol.Hover{
             .contents = .{
@@ -91,7 +94,40 @@ pub const HoverProvider = struct {
         kind: []const u8,
         node_text: []const u8,
         node: grove.Node,
+        full_text: []const u8,
+        supports_shell_ffi: bool,
     ) ![]const u8 {
+        // Check for FFI functions/globals first (if in GShell file)
+        if (supports_shell_ffi and std.mem.eql(u8, kind, "identifier")) {
+            // Check if this is part of a member expression (shell.alias, git.current_branch, etc.)
+            if (node.parent()) |parent| {
+                const parent_kind = parent.kind();
+
+                // Check for field access (shell.alias or git.current_branch)
+                if (std.mem.eql(u8, parent_kind, "field") or
+                    std.mem.eql(u8, parent_kind, "dot_index_expression") or
+                    std.mem.eql(u8, parent_kind, "index_expression") or
+                    std.mem.eql(u8, parent_kind, "member_expression") or
+                    std.mem.eql(u8, parent_kind, "property_identifier")) {
+
+                    // Try to find the namespace (shell or git)
+                    const namespace = try self.detectFFINamespace(parent, full_text);
+
+                    if (namespace) |ns| {
+                        // Check if this identifier is an FFI function
+                        if (self.ffi_loader.getFunction(ns, node_text)) |func| {
+                            return try self.formatFFIFunctionHover(func);
+                        }
+                    }
+                }
+            }
+
+            // Check if it's a shell global variable (SHELL_VERSION, HOME, etc.)
+            if (self.ffi_loader.getGlobal("shell", node_text)) |global| {
+                return try self.formatFFIGlobalHover(global);
+            }
+        }
+
         // Check for common Ghostlang constructs
         if (std.mem.eql(u8, kind, "function_declaration") or
             std.mem.eql(u8, kind, "function")) {
@@ -144,11 +180,110 @@ pub const HoverProvider = struct {
         }
 
         // Default hover with node info
-        _ = node; // Will use for more advanced info later
         return try std.fmt.allocPrint(
             self.allocator,
             "**Node**: `{s}`\n\n```\n{s}\n```",
             .{kind, node_text},
+        );
+    }
+
+    /// Detect FFI namespace (shell or git) from a parent node
+    fn detectFFINamespace(
+        self: *HoverProvider,
+        parent: grove.Node,
+        text: []const u8,
+    ) !?[]const u8 {
+        _ = self;
+
+        // For member_expression nodes, the object is the first child
+        // Look at parent's children to find the namespace identifier
+        const child_count = parent.childCount();
+        var i: u32 = 0;
+        while (i < child_count) : (i += 1) {
+            if (parent.child(i)) |child| {
+                const kind = child.kind();
+                if (std.mem.eql(u8, kind, "identifier")) {
+                    const start = child.startByte();
+                    const end = child.endByte();
+                    if (end > start and end <= text.len) {
+                        const name = text[start..end];
+                        // Return string literals for known namespaces (safer for lifetime)
+                        if (std.mem.eql(u8, name, "shell")) {
+                            return "shell";
+                        } else if (std.mem.eql(u8, name, "git")) {
+                            return "git";
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /// Format hover text for an FFI function
+    fn formatFFIFunctionHover(
+        self: *HoverProvider,
+        func: *const ffi_loader.FFIFunction,
+    ) ![]const u8 {
+        // Build markdown documentation
+        var doc = std.ArrayList(u8){};
+        defer doc.deinit(self.allocator);
+
+        // Function signature
+        try doc.appendSlice(self.allocator, "**FFI Function**\n\n```lua\n");
+        try doc.appendSlice(self.allocator, func.signature);
+        try doc.appendSlice(self.allocator, "\n```\n\n");
+
+        // Description
+        try doc.appendSlice(self.allocator, func.description);
+        try doc.appendSlice(self.allocator, "\n\n");
+
+        // Parameters
+        if (func.parameters.len > 0) {
+            try doc.appendSlice(self.allocator, "**Parameters:**\n");
+            for (func.parameters) |param| {
+                try doc.appendSlice(self.allocator, "- `");
+                try doc.appendSlice(self.allocator, param.name);
+                try doc.appendSlice(self.allocator, "` (");
+                try doc.appendSlice(self.allocator, param.type);
+                try doc.appendSlice(self.allocator, "): ");
+                try doc.appendSlice(self.allocator, param.description);
+                try doc.appendSlice(self.allocator, "\n");
+            }
+            try doc.appendSlice(self.allocator, "\n");
+        }
+
+        // Return type
+        try doc.appendSlice(self.allocator, "**Returns:** `");
+        try doc.appendSlice(self.allocator, func.returns.type);
+        try doc.appendSlice(self.allocator, "`");
+        if (func.returns.description) |desc| {
+            try doc.appendSlice(self.allocator, " - ");
+            try doc.appendSlice(self.allocator, desc);
+        }
+        try doc.appendSlice(self.allocator, "\n\n");
+
+        // Examples
+        if (func.examples.len > 0) {
+            try doc.appendSlice(self.allocator, "**Example:**\n```lua\n");
+            try doc.appendSlice(self.allocator, func.examples[0]);
+            try doc.appendSlice(self.allocator, "\n```\n");
+        }
+
+        return try doc.toOwnedSlice(self.allocator);
+    }
+
+    /// Format hover text for an FFI global variable
+    fn formatFFIGlobalHover(
+        self: *HoverProvider,
+        global: *const ffi_loader.FFIGlobal,
+    ) ![]const u8 {
+        const readonly_str = if (global.readonly) " (readonly)" else "";
+
+        return try std.fmt.allocPrint(
+            self.allocator,
+            "**Shell Global Variable**\n\n```lua\n{s}: {s}{s}\n```\n\n{s}",
+            .{global.name, global.type, readonly_str, global.description},
         );
     }
 };
