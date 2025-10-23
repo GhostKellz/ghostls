@@ -38,7 +38,7 @@
         },
         .ghostlang = .{
             .url = "https://github.com/ghostkellz/ghostlang/archive/refs/heads/main.tar.gz",
-            .hash = "ghostlang-0.1.4-_SzSPRf6BQCvK3o-Cy1yo4S1ekm3UIMvCqb-g-KtV9CY",
+            .hash = "ghostlang-0.2.0-_SzSPc_-BQCjf7sNB6wE0rctwgTxKGbPvJaeHhSUzE0x",
         },
         .zlog = .{
             .url = "https://github.com/ghostkellz/zlog/archive/main.tar.gz",
