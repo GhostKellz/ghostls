@@ -37,8 +37,8 @@
             .hash = "grove-0.1.1-rGFsN9wr6QRA8itbDIdvhfNW5zGabtBbcwHEFCK3hNxB",
         },
         .ghostlang = .{
-            .url = "https://github.com/ghostkellz/ghostlang/archive/main.tar.gz",
-            .hash = "ghostlang-0.2.0-_SzSPc_-BQCjf7sNB6wE0rctwgTxKGbPvJaeHhSUzE0x",
+            .url = "https://github.com/ghostkellz/ghostlang/archive/refs/heads/main.tar.gz",
+            .hash = "ghostlang-0.2.1-_SzSPa8iBgAWfv0ezCCILl8BUlmNtwnM6sbQq4nH6m9U",
         },
         .zlog = .{
             .url = "https://github.com/ghostkellz/zlog/archive/main.tar.gz",
