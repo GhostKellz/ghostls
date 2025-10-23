@@ -412,6 +412,39 @@ pub const CompletionProvider = struct {
             // Iterators
             .{ .label = "pairs", .detail = "function(table: Table): Iterator", .doc = "Iterate over key-value pairs" },
             .{ .label = "ipairs", .detail = "function(array: Array): Iterator", .doc = "Iterate over array indices" },
+
+            // Math library (v0.2.0)
+            .{ .label = "floor", .detail = "function(x: number): number", .doc = "Round down to nearest integer" },
+            .{ .label = "ceil", .detail = "function(x: number): number", .doc = "Round up to nearest integer" },
+            .{ .label = "abs", .detail = "function(x: number): number", .doc = "Return absolute value" },
+            .{ .label = "sqrt", .detail = "function(x: number): number", .doc = "Return square root" },
+            .{ .label = "min", .detail = "function(...: number): number", .doc = "Return minimum value from arguments" },
+            .{ .label = "max", .detail = "function(...: number): number", .doc = "Return maximum value from arguments" },
+            .{ .label = "random", .detail = "function(min: number, max: number): number", .doc = "Generate random integer between min and max (inclusive)" },
+
+            // Table utilities (v0.2.0)
+            .{ .label = "table_clone", .detail = "function(table: Table, deep: boolean): Table", .doc = "Clone a table (shallow by default, deep if second arg is true)" },
+            .{ .label = "table_merge", .detail = "function(base: Table, override: Table): Table", .doc = "Recursively merge two tables, override values take precedence" },
+            .{ .label = "table_keys", .detail = "function(table: Table): Array", .doc = "Get array of all table keys" },
+            .{ .label = "table_values", .detail = "function(table: Table): Array", .doc = "Get array of all table values" },
+            .{ .label = "table_find", .detail = "function(array: Array, value: any): number", .doc = "Find first index of value in array (returns nil if not found)" },
+            .{ .label = "table_map", .detail = "function(array: Array, mapper: function): Array", .doc = "Map function over array elements" },
+            .{ .label = "table_filter", .detail = "function(array: Array, predicate: function): Array", .doc = "Filter array elements by predicate" },
+
+            // String utilities (v0.2.0)
+            .{ .label = "string_split", .detail = "function(str: string, delimiter: string): Array", .doc = "Split string by delimiter (empty delimiter splits into characters)" },
+            .{ .label = "string_trim", .detail = "function(str: string): string", .doc = "Remove leading and trailing whitespace" },
+            .{ .label = "string_starts_with", .detail = "function(str: string, prefix: string): boolean", .doc = "Check if string starts with prefix" },
+            .{ .label = "string_ends_with", .detail = "function(str: string, suffix: string): boolean", .doc = "Check if string ends with suffix" },
+
+            // Path utilities (v0.2.0)
+            .{ .label = "path_join", .detail = "function(...: string): string", .doc = "Join path components with platform-appropriate separator" },
+            .{ .label = "path_basename", .detail = "function(path: string): string", .doc = "Extract filename from path" },
+            .{ .label = "path_dirname", .detail = "function(path: string): string", .doc = "Extract directory from path" },
+            .{ .label = "path_is_absolute", .detail = "function(path: string): boolean", .doc = "Check if path is absolute" },
+
+            // Table concat (v0.2.0)
+            .{ .label = "concat", .detail = "function(array: Array, separator: string): string", .doc = "Join array elements into string with separator" },
         };
 
         for (builtins) |builtin| {
