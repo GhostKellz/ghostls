@@ -25,8 +25,13 @@ pub const HoverProvider = struct {
 
         const root = root_opt.?;
 
-        // Find the smallest node at the given position
-        const node_opt = self.findNodeAtPosition(root, position);
+        // Use Grove's LSP helper to find the node at position (replaces ~40 lines!)
+        const grove_pos = grove.LSP.Position{
+            .line = position.line,
+            .character = position.character,
+        };
+
+        const node_opt = grove.LSP.findNodeAtPosition(root, grove_pos);
         if (node_opt == null) return null;
 
         const node = node_opt.?;
@@ -43,49 +48,26 @@ pub const HoverProvider = struct {
         // Build hover content based on node kind
         const hover_text = try self.buildHoverContent(kind, node_text, node, text, supports_shell_ffi);
 
+        // Use Grove's helper to convert node to range
+        const grove_range = grove.LSP.nodeToRange(node);
+        const lsp_range = protocol.Range{
+            .start = .{
+                .line = grove_range.start.line,
+                .character = grove_range.start.character,
+            },
+            .end = .{
+                .line = grove_range.end.line,
+                .character = grove_range.end.character,
+            },
+        };
+
         return protocol.Hover{
             .contents = .{
                 .kind = "markdown",
                 .value = hover_text,
             },
-            .range = nodeToRange(node),
+            .range = lsp_range,
         };
-    }
-
-    /// Find the smallest node that contains the position
-    fn findNodeAtPosition(
-        self: *HoverProvider,
-        node: grove.Node,
-        position: protocol.Position,
-    ) ?grove.Node {
-        const start_pos = node.startPosition();
-        const end_pos = node.endPosition();
-
-        // Check if position is within this node's range
-        if (!positionInRange(position, start_pos, end_pos)) {
-            return null;
-        }
-
-        // Check children for a more specific match
-        const child_count = node.childCount();
-        var i: u32 = 0;
-        while (i < child_count) : (i += 1) {
-            if (node.child(i)) |child| {
-                const child_start = child.startPosition();
-                const child_end = child.endPosition();
-
-                if (positionInRange(position, child_start, child_end)) {
-                    // Recursively check if a child has a more specific match
-                    if (self.findNodeAtPosition(child, position)) |found| {
-                        return found;
-                    }
-                    return child;
-                }
-            }
-        }
-
-        // No child matched, return this node
-        return node;
     }
 
     /// Build hover content based on node kind
@@ -383,37 +365,3 @@ pub const HoverProvider = struct {
         return null;
     }
 };
-
-/// Check if a position is within a range
-fn positionInRange(
-    pos: protocol.Position,
-    start: grove.Point,
-    end: grove.Point,
-) bool {
-    // Position is before the start
-    if (pos.line < start.row) return false;
-    if (pos.line == start.row and pos.character < start.column) return false;
-
-    // Position is after the end
-    if (pos.line > end.row) return false;
-    if (pos.line == end.row and pos.character > end.column) return false;
-
-    return true;
-}
-
-/// Convert a tree-sitter node to LSP range
-fn nodeToRange(node: grove.Node) protocol.Range {
-    const start_point = node.startPosition();
-    const end_point = node.endPosition();
-
-    return .{
-        .start = .{
-            .line = start_point.row,
-            .character = start_point.column,
-        },
-        .end = .{
-            .line = end_point.row,
-            .character = end_point.column,
-        },
-    };
-}

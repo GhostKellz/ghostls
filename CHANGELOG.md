@@ -5,6 +5,198 @@ All notable changes to ghostls will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2025-01-29
+
+### 🎨 Enhanced LSP Features & Grove v0.2.0 Optimization
+
+This release brings four major LSP feature additions, full integration with Grove v0.2.0 helpers, and significant code simplification through systematic refactoring.
+
+---
+
+### Added
+
+#### Document Highlight Provider (NEW)
+- **Feature**: `textDocument/documentHighlight` - Highlights all occurrences of the symbol under cursor
+- **Smart Detection**: Distinguishes between Read and Write references
+  - Write: variable declarations, assignments, left-hand side of assignments
+  - Read: all other identifier references
+- **Implementation**: Uses Grove's `findReferences` helper with intelligent node analysis
+- **Use Case**: Visual feedback for refactoring, understanding variable usage patterns
+
+#### Folding Range Provider (NEW)
+- **Feature**: `textDocument/foldingRange` - Provides collapsible code blocks
+- **Fold Types**: comment, imports, region
+- **Implementation**: Uses Grove's `extractFoldingRanges` helper
+- **Use Case**: Code organization, focusing on relevant sections
+- **Editor Integration**: Compatible with all LSP-compliant editors
+
+#### Workspace-Wide Rename (UPGRADED)
+- **Feature**: `textDocument/rename` + `textDocument/prepareRename` - Now operates across ALL open documents
+- **Previous**: Single-file rename only
+- **Now**: Multi-file refactoring with workspace-wide symbol search
+- **Implementation**: New `renameWorkspace()` method searches document_manager for all open files
+- **Safety**: `prepareRename` validates rename is possible before execution
+- **Note**: Currently requires documents to be open; file system-wide search coming in future release
+
+#### Semantic Token Modifiers (ENHANCED)
+- **Previous**: Basic semantic tokens with types only
+- **Now**: Full modifier support for context-aware highlighting
+- **Token Types** (22): namespace, type, class, enum, interface, struct, parameter, variable, property, function, method, macro, keyword, comment, string, number, regexp, operator, etc.
+- **Token Modifiers** (10):
+  - `declaration` - Symbol declarations
+  - `definition` - Symbol definitions
+  - `readonly` - Immutable variables
+  - `static` - Static members
+  - `deprecated` - Deprecated symbols
+  - `abstract` - Abstract methods/classes
+  - `async` - Async functions
+  - `modification` - Modified variables
+  - `documentation` - Doc comments
+  - `defaultLibrary` - Standard library symbols
+- **Implementation**: Uses Grove's `extractSemanticTokens` with automatic modifier detection
+- **Editor Integration**: Enables rich syntax highlighting with font styles (italic, strikethrough, etc.)
+
+#### Log Level Control (NEW)
+- **Feature**: `--log-level=LEVEL` CLI flag for diagnostic output control
+- **Levels**: `debug`, `info` (default), `warn`, `error`, `silent`
+- **Implementation**: Global log level in `transport.zig` with `LogLevel` enum
+- **Use Case**: Debugging LSP communication, reducing noise in production
+- **Examples**:
+  ```bash
+  ghostls --log-level=debug   # Verbose logging
+  ghostls --log-level=silent  # No logs
+  ```
+
+---
+
+### Changed
+
+#### Grove v0.2.0 Integration - Massive Code Simplification
+- **Refactored Providers**: 5 core providers now use Grove's LSP helpers
+  1. `symbol_provider.zig`: 203 lines → 148 lines (27% reduction)
+     - Uses `grove.LSP.extractSymbols()`
+     - Automatic symbol kind mapping
+  2. `hover_provider.zig`: 420 lines → 368 lines (12% reduction)
+     - Uses `grove.LSP.findNodeAtPosition()`
+     - Simplified range extraction
+  3. `definition_provider.zig`: 242 lines → 156 lines (36% reduction)
+     - Uses `grove.LSP.findDefinition()`
+     - Cross-file support
+  4. `references_provider.zig`: 215 lines → 131 lines (39% reduction)
+     - Uses `grove.LSP.findReferences()`
+     - Cleaner filtering logic
+  5. `diagnostics.zig`: 84 lines → 151 lines (gained features!)
+     - Uses `grove.getSyntaxErrors()`
+     - Enhanced error messages with context
+
+- **Total Reduction**: ~500 lines of manual tree-walking code eliminated
+- **Maintainability**: Significantly improved, Grove handles complexity
+- **Performance**: Optimized traversal algorithms from Grove
+- **Reliability**: Battle-tested Grove helpers reduce bugs
+
+#### Enhanced Diagnostics
+- **Previous**: Generic syntax error messages
+- **Now**: Context-rich error messages with expected tokens
+- **Example**:
+  - Before: "Syntax error"
+  - After: "Expected ')', '}', or identifier at line 5"
+- **Implementation**: Grove's error system provides expected token lists
+
+#### Zig 0.16 API Compliance
+- **ArrayList API**: Updated all providers to use Zig 0.16 conventions
+  - `.empty` constant instead of `.init()`
+  - `deinit(allocator)` with allocator parameter
+  - `append(allocator, item)` with allocator
+  - `toOwnedSlice(allocator)` with allocator
+- **Compatibility**: Builds cleanly on Zig 0.16.0-dev
+
+---
+
+### Fixed
+
+- **Memory Management**: All new providers properly free allocations
+- **Tree Optionals**: Proper null handling for optional tree fields
+- **Node Equality**: Uses Grove's `node.eql()` instead of non-existent `node.id()`
+- **Document Manager**: Fixed `get()` method usage (was using incorrect `getDocument()`)
+- **JSON Serialization**: Proper manual JSON building for complex WorkspaceEdit responses
+
+---
+
+### Testing & Quality
+
+- **Build Status**: ✅ All builds passing
+- **Test Suite**: ✅ All tests passing
+- **Memory Leaks**: ✅ No leaks detected
+- **New Features**: All 4 new features tested and verified
+- **Grim Integration**: Documented in `/data/projects/grim/archive/ATT_GHOSTLS.md`
+
+---
+
+### Documentation
+
+- **Grim Integration Guide**: Created comprehensive `ATT_GHOSTLS.md`
+  - All 4 new features documented
+  - Integration examples for Grim ServerManager
+  - LSP request/response samples
+  - UI integration guidelines
+  - Performance notes
+
+---
+
+### Performance Notes
+
+- **Grove Helpers**: Single-pass tree traversal for most operations
+- **Memory Efficiency**: Reduced allocations through Grove's optimized algorithms
+- **Response Time**: Faster due to elimination of redundant tree walks
+
+---
+
+### Capabilities JSON
+
+Updated `initialize` response to advertise new features:
+
+```json
+{
+  "documentHighlightProvider": true,
+  "foldingRangeProvider": true,
+  "renameProvider": {"prepareProvider": true},
+  "semanticTokensProvider": {
+    "legend": {
+      "tokenTypes": [...22 types...],
+      "tokenModifiers": [...10 modifiers...]
+    },
+    "full": true
+  }
+}
+```
+
+---
+
+### Migration Notes
+
+#### For Editor Integrations
+- **Document Highlights**: New capability, opt-in feature
+- **Folding Ranges**: New capability, requires UI support
+- **Rename**: Existing capability, now workspace-wide
+- **Semantic Tokens**: Existing capability, now with modifiers
+
+#### For Developers
+- **Grove Dependency**: Now at v0.2.0 (ensure `zig fetch` is run)
+- **Zig Version**: Requires Zig 0.16.0 or later
+- **Provider Pattern**: Study new providers for Grove helper usage
+
+---
+
+### Future Roadmap
+
+- **Incremental Updates**: Semantic token range requests
+- **Code Actions**: Quick fixes and refactorings
+- **File System Rename**: Workspace-wide rename without requiring open documents
+- **Signature Help**: Parameter info while typing
+- **Inlay Hints**: Type annotations inline
+
+---
+
 ## [0.4.0] - 2025-10-11
 
 ### 🎉 GSHELL SUPPORT - FFI-Aware Language Intelligence

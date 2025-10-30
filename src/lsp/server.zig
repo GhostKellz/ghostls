@@ -9,6 +9,9 @@ const DefinitionProvider = @import("definition_provider.zig").DefinitionProvider
 const CompletionProvider = @import("completion_provider.zig").CompletionProvider;
 const ReferencesProvider = @import("references_provider.zig").ReferencesProvider;
 const WorkspaceSymbolProvider = @import("workspace_symbol_provider.zig").WorkspaceSymbolProvider;
+const DocumentHighlightProvider = @import("document_highlight_provider.zig").DocumentHighlightProvider;
+const FoldingRangeProvider = @import("folding_range_provider.zig").FoldingRangeProvider;
+const RenameProvider = @import("rename_provider.zig").RenameProvider;
 const FFILoader = @import("ffi_loader.zig").FFILoader;
 
 pub const Server = struct {
@@ -23,6 +26,9 @@ pub const Server = struct {
     completion_provider: CompletionProvider,
     references_provider: ReferencesProvider,
     workspace_symbol_provider: WorkspaceSymbolProvider,
+    document_highlight_provider: DocumentHighlightProvider,
+    folding_range_provider: FoldingRangeProvider,
+    rename_provider: RenameProvider,
     ffi_loader: FFILoader,
     initialized: bool = false,
     shutdown_requested: bool = false,
@@ -44,6 +50,9 @@ pub const Server = struct {
             .completion_provider = CompletionProvider.init(allocator, &ffi_loader),
             .references_provider = ReferencesProvider.init(allocator),
             .workspace_symbol_provider = WorkspaceSymbolProvider.init(allocator),
+            .document_highlight_provider = DocumentHighlightProvider.init(allocator),
+            .folding_range_provider = FoldingRangeProvider.init(allocator),
+            .rename_provider = RenameProvider.init(allocator),
             .ffi_loader = ffi_loader,
         };
     }
@@ -150,6 +159,18 @@ pub const Server = struct {
         } else if (std.mem.eql(u8, method_str, protocol.Methods.workspace_symbol)) {
             const id = maybe_id orelse return error.InvalidRequest;
             return try self.handleWorkspaceSymbol(id, obj.get("params"));
+        } else if (std.mem.eql(u8, method_str, protocol.Methods.text_document_document_highlight)) {
+            const id = maybe_id orelse return error.InvalidRequest;
+            return try self.handleDocumentHighlight(id, obj.get("params"));
+        } else if (std.mem.eql(u8, method_str, protocol.Methods.text_document_folding_range)) {
+            const id = maybe_id orelse return error.InvalidRequest;
+            return try self.handleFoldingRange(id, obj.get("params"));
+        } else if (std.mem.eql(u8, method_str, protocol.Methods.text_document_prepare_rename)) {
+            const id = maybe_id orelse return error.InvalidRequest;
+            return try self.handlePrepareRename(id, obj.get("params"));
+        } else if (std.mem.eql(u8, method_str, protocol.Methods.text_document_rename)) {
+            const id = maybe_id orelse return error.InvalidRequest;
+            return try self.handleRename(id, obj.get("params"));
         } else if (std.mem.eql(u8, method_str, protocol.Methods.workspace_did_change_configuration)) {
             return try self.handleDidChangeConfiguration(obj.get("params"));
         } else {
@@ -173,7 +194,7 @@ pub const Server = struct {
         // Build InitializeResult JSON manually for compatibility
         const capabilities_json = try std.fmt.allocPrint(
             self.allocator,
-            \\{{"positionEncoding":"utf-16","textDocumentSync":{{"openClose":true,"change":1,"save":{{"includeText":true}}}},"hoverProvider":true,"completionProvider":{{"triggerCharacters":[".",":"]}},"definitionProvider":true,"referencesProvider":true,"workspaceSymbolProvider":true,"documentSymbolProvider":true}}
+            \\{{"positionEncoding":"utf-16","textDocumentSync":{{"openClose":true,"change":1,"save":{{"includeText":true}}}},"hoverProvider":true,"completionProvider":{{"triggerCharacters":[".",":"]}},"definitionProvider":true,"referencesProvider":true,"workspaceSymbolProvider":true,"documentSymbolProvider":true,"documentHighlightProvider":true,"foldingRangeProvider":true,"renameProvider":{{"prepareProvider":true}},"semanticTokensProvider":{{"legend":{{"tokenTypes":["namespace","type","class","enum","interface","struct","typeParameter","parameter","variable","property","enumMember","event","function","method","macro","keyword","modifier","comment","string","number","regexp","operator"],"tokenModifiers":["declaration","definition","readonly","static","deprecated","abstract","async","modification","documentation","defaultLibrary"]}},"range":false,"full":true}}}}
             ,
             .{},
         );
@@ -852,6 +873,308 @@ pub const Server = struct {
             "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{s}}}",
             .{ id_str, syms_json.items },
         );
+    }
+
+    fn handleDocumentHighlight(self: *Server, id: std.json.Value, params: ?std.json.Value) ![]const u8 {
+        const params_obj = (params orelse return error.InvalidParams).object;
+        const text_doc = params_obj.get("textDocument") orelse return error.InvalidParams;
+        const position_obj = params_obj.get("position") orelse return error.InvalidParams;
+
+        const uri = text_doc.object.get("uri") orelse return error.InvalidParams;
+        const line = position_obj.object.get("line") orelse return error.InvalidParams;
+        const character = position_obj.object.get("character") orelse return error.InvalidParams;
+
+        const doc = self.document_manager.get(uri.string) orelse {
+            return try self.response_builder.success(self.jsonIdToProtocolId(id), null);
+        };
+
+        const tree = &(doc.tree orelse {
+            return try self.response_builder.success(self.jsonIdToProtocolId(id), null);
+        });
+
+        const highlights = try self.document_highlight_provider.getHighlights(
+            tree,
+            doc.text,
+            .{
+                .line = @intCast(line.integer),
+                .character = @intCast(character.integer),
+            },
+        );
+        defer self.allocator.free(highlights);
+
+        // Build highlights JSON array
+        var highlights_json: std.ArrayList(u8) = .empty;
+        defer highlights_json.deinit(self.allocator);
+
+        try highlights_json.appendSlice(self.allocator, "[");
+        for (highlights, 0..) |highlight, i| {
+            if (i > 0) try highlights_json.appendSlice(self.allocator, ",");
+
+            const kind_num: u32 = @intFromEnum(highlight.kind orelse .Text);
+            const highlight_str = try std.fmt.allocPrint(
+                self.allocator,
+                "{{\"range\":{{\"start\":{{\"line\":{d},\"character\":{d}}},\"end\":{{\"line\":{d},\"character\":{d}}}}},\"kind\":{d}}}",
+                .{
+                    highlight.range.start.line,
+                    highlight.range.start.character,
+                    highlight.range.end.line,
+                    highlight.range.end.character,
+                    kind_num,
+                },
+            );
+            defer self.allocator.free(highlight_str);
+            try highlights_json.appendSlice(self.allocator, highlight_str);
+        }
+        try highlights_json.appendSlice(self.allocator, "]");
+
+        const id_str = switch (self.jsonIdToProtocolId(id)) {
+            .integer => |i| try std.fmt.allocPrint(self.allocator, "{d}", .{i}),
+            .string => |s| try std.fmt.allocPrint(self.allocator, "\"{s}\"", .{s}),
+        };
+        defer self.allocator.free(id_str);
+
+        return try std.fmt.allocPrint(
+            self.allocator,
+            "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{s}}}",
+            .{ id_str, highlights_json.items },
+        );
+    }
+
+    fn handleFoldingRange(self: *Server, id: std.json.Value, params: ?std.json.Value) ![]const u8 {
+        const params_obj = (params orelse return error.InvalidParams).object;
+        const text_doc = params_obj.get("textDocument") orelse return error.InvalidParams;
+        const uri = text_doc.object.get("uri") orelse return error.InvalidParams;
+
+        const doc = self.document_manager.get(uri.string) orelse {
+            return try self.response_builder.success(self.jsonIdToProtocolId(id), null);
+        };
+
+        const tree = &(doc.tree orelse {
+            return try self.response_builder.success(self.jsonIdToProtocolId(id), null);
+        });
+
+        const ranges = try self.folding_range_provider.getFoldingRanges(tree, doc.text);
+        defer self.allocator.free(ranges);
+
+        // Build folding ranges JSON array
+        var ranges_json: std.ArrayList(u8) = .empty;
+        defer ranges_json.deinit(self.allocator);
+
+        try ranges_json.appendSlice(self.allocator, "[");
+        for (ranges, 0..) |range, i| {
+            if (i > 0) try ranges_json.appendSlice(self.allocator, ",");
+
+            // Build optional kind string
+            const kind_str = if (range.kind) |k| blk: {
+                const kind_name = switch (k) {
+                    .comment => "comment",
+                    .imports => "imports",
+                    .region => "region",
+                };
+                break :blk try std.fmt.allocPrint(
+                    self.allocator,
+                    ",\"kind\":\"{s}\"",
+                    .{kind_name},
+                );
+            } else "";
+            defer if (range.kind != null) self.allocator.free(kind_str);
+
+            // Build optional character fields
+            const start_char_str = if (range.startCharacter) |sc|
+                try std.fmt.allocPrint(self.allocator, ",\"startCharacter\":{d}", .{sc})
+            else
+                "";
+            defer if (range.startCharacter != null) self.allocator.free(start_char_str);
+
+            const end_char_str = if (range.endCharacter) |ec|
+                try std.fmt.allocPrint(self.allocator, ",\"endCharacter\":{d}", .{ec})
+            else
+                "";
+            defer if (range.endCharacter != null) self.allocator.free(end_char_str);
+
+            const range_str = try std.fmt.allocPrint(
+                self.allocator,
+                "{{\"startLine\":{d}{s},\"endLine\":{d}{s}{s}}}",
+                .{
+                    range.startLine,
+                    start_char_str,
+                    range.endLine,
+                    end_char_str,
+                    kind_str,
+                },
+            );
+            defer self.allocator.free(range_str);
+            try ranges_json.appendSlice(self.allocator, range_str);
+        }
+        try ranges_json.appendSlice(self.allocator, "]");
+
+        const id_str = switch (self.jsonIdToProtocolId(id)) {
+            .integer => |i| try std.fmt.allocPrint(self.allocator, "{d}", .{i}),
+            .string => |s| try std.fmt.allocPrint(self.allocator, "\"{s}\"", .{s}),
+        };
+        defer self.allocator.free(id_str);
+
+        return try std.fmt.allocPrint(
+            self.allocator,
+            "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{s}}}",
+            .{ id_str, ranges_json.items },
+        );
+    }
+
+    fn handlePrepareRename(self: *Server, id: std.json.Value, params: ?std.json.Value) ![]const u8 {
+        const params_obj = (params orelse return error.InvalidParams).object;
+        const text_doc = params_obj.get("textDocument") orelse return error.InvalidParams;
+        const position_obj = params_obj.get("position") orelse return error.InvalidParams;
+
+        const uri = text_doc.object.get("uri") orelse return error.InvalidParams;
+        const line = position_obj.object.get("line") orelse return error.InvalidParams;
+        const character = position_obj.object.get("character") orelse return error.InvalidParams;
+
+        const doc = self.document_manager.get(uri.string) orelse {
+            return try self.response_builder.@"error"(
+                self.jsonIdToProtocolId(id),
+                transport.ErrorCodes.InvalidParams,
+                "Document not found",
+            );
+        };
+
+        const tree = &(doc.tree orelse {
+            return try self.response_builder.@"error"(
+                self.jsonIdToProtocolId(id),
+                transport.ErrorCodes.InternalError,
+                "Document not parsed",
+            );
+        });
+
+        const position = protocol.Position{
+            .line = @intCast(line.integer),
+            .character = @intCast(character.integer),
+        };
+
+        const range_opt = try self.rename_provider.prepareRename(tree, doc.text, position);
+
+        if (range_opt) |range| {
+            // Build range JSON
+            const range_str = try std.fmt.allocPrint(
+                self.allocator,
+                "{{\"start\":{{\"line\":{d},\"character\":{d}}},\"end\":{{\"line\":{d},\"character\":{d}}}}}",
+                .{ range.start.line, range.start.character, range.end.line, range.end.character }
+            );
+            defer self.allocator.free(range_str);
+
+            const id_str = switch (self.jsonIdToProtocolId(id)) {
+                .integer => |i| try std.fmt.allocPrint(self.allocator, "{d}", .{i}),
+                .string => |s| try std.fmt.allocPrint(self.allocator, "\"{s}\"", .{s}),
+            };
+            defer self.allocator.free(id_str);
+
+            return try std.fmt.allocPrint(
+                self.allocator,
+                "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{s}}}",
+                .{ id_str, range_str },
+            );
+        } else {
+            // Return null if rename not possible
+            return try self.response_builder.success(self.jsonIdToProtocolId(id), null);
+        }
+    }
+
+    fn handleRename(self: *Server, id: std.json.Value, params: ?std.json.Value) ![]const u8 {
+        const params_obj = (params orelse return error.InvalidParams).object;
+        const text_doc = params_obj.get("textDocument") orelse return error.InvalidParams;
+        const position_obj = params_obj.get("position") orelse return error.InvalidParams;
+        const new_name_val = params_obj.get("newName") orelse return error.InvalidParams;
+
+        const uri = text_doc.object.get("uri") orelse return error.InvalidParams;
+        const line = position_obj.object.get("line") orelse return error.InvalidParams;
+        const character = position_obj.object.get("character") orelse return error.InvalidParams;
+
+        const position = protocol.Position{
+            .line = @intCast(line.integer),
+            .character = @intCast(character.integer),
+        };
+
+        // Use workspace-wide rename
+        const edit_opt = try self.rename_provider.renameWorkspace(
+            &self.document_manager,
+            uri.string,
+            position,
+            new_name_val.string,
+        );
+
+        if (edit_opt) |edit| {
+            var workspace_edit = edit;
+            defer self.rename_provider.freeWorkspaceEdit(&workspace_edit);
+
+            // Build WorkspaceEdit JSON with changes (manually)
+            var json_parts: std.ArrayList([]const u8) = .empty;
+            defer {
+                for (json_parts.items) |part| {
+                    self.allocator.free(part);
+                }
+                json_parts.deinit(self.allocator);
+            }
+
+            try json_parts.append(self.allocator, try self.allocator.dupe(u8, "{\"changes\":{"));
+
+            var first_doc = true;
+            var it = workspace_edit.changes.iterator();
+            while (it.next()) |entry| {
+                if (!first_doc) {
+                    try json_parts.append(self.allocator, try self.allocator.dupe(u8, ","));
+                }
+                first_doc = false;
+
+                // Add URI key
+                try json_parts.append(self.allocator, try std.fmt.allocPrint(self.allocator, "\"{s}\":[", .{entry.key_ptr.*}));
+
+                // Add edits for this document
+                for (entry.value_ptr.*, 0..) |text_edit, i| {
+                    if (i > 0) {
+                        try json_parts.append(self.allocator, try self.allocator.dupe(u8, ","));
+                    }
+                    try json_parts.append(self.allocator, try std.fmt.allocPrint(
+                        self.allocator,
+                        "{{\"range\":{{\"start\":{{\"line\":{d},\"character\":{d}}},\"end\":{{\"line\":{d},\"character\":{d}}}}},\"newText\":\"{s}\"}}",
+                        .{ text_edit.range.start.line, text_edit.range.start.character,
+                           text_edit.range.end.line, text_edit.range.end.character,
+                           text_edit.new_text }
+                    ));
+                }
+
+                try json_parts.append(self.allocator, try self.allocator.dupe(u8, "]"));
+            }
+
+            try json_parts.append(self.allocator, try self.allocator.dupe(u8, "}}"));
+
+            // Join all parts
+            var total_len: usize = 0;
+            for (json_parts.items) |part| {
+                total_len += part.len;
+            }
+            const json = try self.allocator.alloc(u8, total_len);
+            defer self.allocator.free(json);
+            var offset: usize = 0;
+            for (json_parts.items) |part| {
+                @memcpy(json[offset..offset + part.len], part);
+                offset += part.len;
+            }
+
+            const id_str = switch (self.jsonIdToProtocolId(id)) {
+                .integer => |i| try std.fmt.allocPrint(self.allocator, "{d}", .{i}),
+                .string => |s| try std.fmt.allocPrint(self.allocator, "\"{s}\"", .{s}),
+            };
+            defer self.allocator.free(id_str);
+
+            return try std.fmt.allocPrint(
+                self.allocator,
+                "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{s}}}",
+                .{ id_str, json },
+            );
+        } else {
+            // Return null if rename not possible
+            return try self.response_builder.success(self.jsonIdToProtocolId(id), null);
+        }
     }
 
     /// Helper to convert std.json.Value to protocol ID

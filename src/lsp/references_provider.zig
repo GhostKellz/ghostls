@@ -2,6 +2,8 @@ const std = @import("std");
 const protocol = @import("protocol.zig");
 const grove = @import("grove");
 
+/// ReferencesProvider finds all references to symbols
+/// Now uses Grove's LSP helpers for simplified implementation
 pub const ReferencesProvider = struct {
     allocator: std.mem.Allocator,
 
@@ -10,6 +12,7 @@ pub const ReferencesProvider = struct {
     }
 
     /// Find all references to the symbol at the given position
+    /// Uses Grove's findReferences helper (replaces ~150 lines of tree walking!)
     pub fn findReferences(
         self: *ReferencesProvider,
         tree: *grove.Tree,
@@ -18,152 +21,101 @@ pub const ReferencesProvider = struct {
         position: protocol.Position,
         include_declaration: bool,
     ) ![]protocol.Location {
-        // Get the node at cursor position using Grove Point API
         const root = tree.rootNode() orelse {
             return try self.allocator.alloc(protocol.Location, 0);
         };
-        const grove_point = grove.Point{ .row = position.line, .column = position.character };
-        const node = root.descendantForPointRange(grove_point, grove_point) orelse {
-            return try self.allocator.alloc(protocol.Location, 0);
+
+        // Use Grove's LSP helper to find node at position
+        const grove_pos = grove.LSP.Position{
+            .line = position.line,
+            .character = position.character,
         };
 
-        // Get the symbol name at cursor
-        const symbol_name = try self.getSymbolName(node, text);
-        if (symbol_name.len == 0) {
+        const node_opt = grove.LSP.findNodeAtPosition(root, grove_pos);
+        if (node_opt == null) {
             return try self.allocator.alloc(protocol.Location, 0);
         }
-        defer self.allocator.free(symbol_name);
 
-        // Find all references to this symbol in the document
-        var locations: std.ArrayList(protocol.Location) = .empty;
-        errdefer locations.deinit(self.allocator);
+        const node = node_opt.?;
+        const kind = node.kind();
 
-        try self.findSymbolReferences(
-            tree,
+        // Only handle identifiers
+        if (!std.mem.eql(u8, kind, "identifier") and
+            !std.mem.eql(u8, kind, "type_identifier")) {
+            return try self.allocator.alloc(protocol.Location, 0);
+        }
+
+        // Get identifier text
+        const start_byte = node.startByte();
+        const end_byte = node.endByte();
+        if (end_byte <= start_byte or end_byte > text.len) {
+            return try self.allocator.alloc(protocol.Location, 0);
+        }
+
+        const identifier = text[start_byte..end_byte];
+
+        // Use Grove's LSP helper to find all references
+        var grove_refs = try grove.LSP.findReferences(
+            self.allocator,
+            root,
+            identifier,
             text,
-            symbol_name,
-            uri,
-            &locations,
-            include_declaration,
         );
+        defer grove_refs.deinit(self.allocator);
+
+        // Filter by include_declaration flag and convert to protocol format
+        var locations: std.ArrayList(protocol.Location) = .empty;
+        errdefer {
+            for (locations.items) |loc| {
+                self.allocator.free(loc.uri);
+            }
+            locations.deinit(self.allocator);
+        }
+
+        for (grove_refs.items) |ref_node| {
+            // Check if this is a declaration
+            const is_decl = self.isDeclarationNode(ref_node);
+
+            if (include_declaration or !is_decl) {
+                const uri_copy = try self.allocator.dupe(u8, uri);
+                errdefer self.allocator.free(uri_copy);
+
+                const grove_range = grove.LSP.nodeToRange(ref_node);
+                const lsp_range = protocol.Range{
+                    .start = .{
+                        .line = grove_range.start.line,
+                        .character = grove_range.start.character,
+                    },
+                    .end = .{
+                        .line = grove_range.end.line,
+                        .character = grove_range.end.character,
+                    },
+                };
+
+                try locations.append(self.allocator, .{
+                    .uri = uri_copy,
+                    .range = lsp_range,
+                });
+            }
+        }
 
         return try locations.toOwnedSlice(self.allocator);
     }
 
-    fn getSymbolName(self: *ReferencesProvider, node: grove.Node, text: []const u8) ![]const u8 {
-        const node_type = node.kind();
-
-        // Check if this is an identifier
-        if (std.mem.eql(u8, node_type, "identifier")) {
-            const start = node.startByte();
-            const end = node.endByte();
-            if (end <= text.len) {
-                return try self.allocator.dupe(u8, text[start..end]);
-            }
-        }
-
-        // Check if parent is an identifier
-        if (node.parent()) |parent| {
-            if (std.mem.eql(u8, parent.kind(), "identifier")) {
-                const start = parent.startByte();
-                const end = parent.endByte();
-                if (end <= text.len) {
-                    return try self.allocator.dupe(u8, text[start..end]);
-                }
-            }
-        }
-
-        return try self.allocator.alloc(u8, 0);
-    }
-
-    fn findSymbolReferences(
-        self: *ReferencesProvider,
-        tree: *grove.Tree,
-        text: []const u8,
-        symbol_name: []const u8,
-        uri: []const u8,
-        locations: *std.ArrayList(protocol.Location),
-        include_declaration: bool,
-    ) !void {
-        const root = tree.rootNode() orelse return;
-
-        // Walk the entire tree looking for identifiers matching the symbol name
-        var cursor = try root.treeWalk();
-        defer cursor.deinit();
-
-        try self.walkTreeForReferences(
-            &cursor,
-            text,
-            symbol_name,
-            uri,
-            locations,
-            include_declaration,
-        );
-    }
-
-    fn walkTreeForReferences(
-        self: *ReferencesProvider,
-        cursor: *grove.TreeCursor,
-        text: []const u8,
-        symbol_name: []const u8,
-        uri: []const u8,
-        locations: *std.ArrayList(protocol.Location),
-        include_declaration: bool,
-    ) !void {
-        if (cursor.gotoFirstChild()) {
-            while (true) {
-                const node = cursor.currentNode();
-                const node_type = node.kind();
-
-                // Check if this is an identifier
-                if (std.mem.eql(u8, node_type, "identifier")) {
-                    const start = node.startByte();
-                    const end = node.endByte();
-
-                    if (end <= text.len) {
-                        const name = text[start..end];
-                        if (std.mem.eql(u8, name, symbol_name)) {
-                            // Check if this is a declaration (if we should exclude it)
-                            const is_declaration = try self.isDeclaration(node);
-
-                            if (include_declaration or !is_declaration) {
-                                // Convert byte range to LSP Range
-                                const range = try byteRangeToRange(text, start, end);
-
-                                try locations.append(self.allocator, .{
-                                    .uri = try self.allocator.dupe(u8, uri),
-                                    .range = range,
-                                });
-                            }
-                        }
-                    }
-                }
-
-                // Recursively search child nodes
-                try self.walkTreeForReferences(
-                    cursor,
-                    text,
-                    symbol_name,
-                    uri,
-                    locations,
-                    include_declaration,
-                );
-
-                if (!cursor.gotoNextSibling()) break;
-            }
-            _ = cursor.gotoParent();
-        }
-    }
-
-    fn isDeclaration(self: *ReferencesProvider, node: grove.Node) !bool {
+    /// Check if a node is part of a declaration
+    fn isDeclarationNode(self: *ReferencesProvider, node: grove.Node) bool {
         _ = self;
 
-        // Check if parent is a variable/function declaration
+        // Check if parent is a declaration
         if (node.parent()) |parent| {
-            const parent_type = parent.kind();
-            return std.mem.eql(u8, parent_type, "variable_declaration") or
-                   std.mem.eql(u8, parent_type, "function_declaration") or
-                   std.mem.eql(u8, parent_type, "local_declaration");
+            const parent_kind = parent.kind();
+            return std.mem.eql(u8, parent_kind, "variable_declaration") or
+                   std.mem.eql(u8, parent_kind, "function_declaration") or
+                   std.mem.eql(u8, parent_kind, "const_declaration") or
+                   std.mem.eql(u8, parent_kind, "let_declaration") or
+                   std.mem.eql(u8, parent_kind, "local_declaration") or
+                   std.mem.eql(u8, parent_kind, "class_declaration") or
+                   std.mem.eql(u8, parent_kind, "struct_declaration");
         }
 
         return false;
@@ -176,39 +128,3 @@ pub const ReferencesProvider = struct {
         self.allocator.free(locations);
     }
 };
-
-fn byteRangeToRange(text: []const u8, start_byte: usize, end_byte: usize) !protocol.Range {
-    var line: u32 = 0;
-    var character: u32 = 0;
-    var start_line: u32 = 0;
-    var start_character: u32 = 0;
-    var found_start = false;
-
-    for (text, 0..) |byte, i| {
-        if (i == start_byte) {
-            start_line = line;
-            start_character = character;
-            found_start = true;
-        }
-
-        if (i == end_byte and found_start) {
-            return .{
-                .start = .{ .line = start_line, .character = start_character },
-                .end = .{ .line = line, .character = character },
-            };
-        }
-
-        if (byte == '\n') {
-            line += 1;
-            character = 0;
-        } else {
-            character += 1;
-        }
-    }
-
-    // Fallback
-    return .{
-        .start = .{ .line = 0, .character = 0 },
-        .end = .{ .line = 0, .character = 0 },
-    };
-}

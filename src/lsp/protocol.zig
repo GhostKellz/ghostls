@@ -83,6 +83,8 @@ pub const ServerCapabilities = struct {
     signatureHelpProvider: ?SignatureHelpOptions = null,
     inlayHintProvider: ?bool = null,
     selectionRangeProvider: ?bool = null,
+    documentHighlightProvider: ?bool = null,
+    foldingRangeProvider: ?bool = null,
 
     pub const TextDocumentSyncOptions = struct {
         openClose: ?bool = null,
@@ -214,6 +216,8 @@ pub const Methods = struct {
     pub const text_document_signature_help = "textDocument/signatureHelp";
     pub const text_document_inlay_hint = "textDocument/inlayHint";
     pub const text_document_selection_range = "textDocument/selectionRange";
+    pub const text_document_document_highlight = "textDocument/documentHighlight";
+    pub const text_document_folding_range = "textDocument/foldingRange";
     pub const workspace_symbol = "workspace/symbol";
     pub const workspace_did_change_configuration = "workspace/didChangeConfiguration";
     pub const workspace_did_change_watched_files = "workspace/didChangeWatchedFiles";
@@ -295,4 +299,31 @@ pub const DefinitionParams = struct {
 pub const TextDocumentPositionParams = struct {
     textDocument: TextDocumentIdentifier,
     position: Position,
+};
+
+// Document Highlight
+pub const DocumentHighlightKind = enum(u32) {
+    Text = 1,
+    Read = 2,
+    Write = 3,
+};
+
+pub const DocumentHighlight = struct {
+    range: Range,
+    kind: ?DocumentHighlightKind = null,
+};
+
+// Folding Range
+pub const FoldingRangeKind = enum {
+    comment,
+    imports,
+    region,
+};
+
+pub const FoldingRange = struct {
+    startLine: u32,
+    startCharacter: ?u32 = null,
+    endLine: u32,
+    endCharacter: ?u32 = null,
+    kind: ?FoldingRangeKind = null,
 };

@@ -1,5 +1,6 @@
 const std = @import("std");
 const Server = @import("lsp/server.zig").Server;
+const transport = @import("lsp/transport.zig");
 
 const VERSION = "0.3.0";
 
@@ -25,10 +26,18 @@ pub fn main() !void {
             try printHelp();
             return;
         } else if (std.mem.startsWith(u8, arg, "--log-level=")) {
-            _ = try stderr.write("[ghostls] Log level set to: ");
-            _ = try stderr.write(arg["--log-level=".len..]);
-            _ = try stderr.write("\n");
-            // TODO: Set log level when we add proper logging infrastructure
+            const level_str = arg["--log-level=".len..];
+            if (transport.LogLevel.fromString(level_str)) |level| {
+                transport.setLogLevel(level);
+                _ = try stderr.write("[ghostls] Log level set to: ");
+                _ = try stderr.write(level_str);
+                _ = try stderr.write("\n");
+            } else {
+                _ = try stderr.write("Invalid log level: ");
+                _ = try stderr.write(level_str);
+                _ = try stderr.write("\nValid levels: debug, info, warn, error, silent\n");
+                std.process.exit(1);
+            }
         } else {
             _ = try stderr.write("Unknown argument: ");
             _ = try stderr.write(arg);
@@ -56,7 +65,7 @@ fn printHelp() !void {
         \\OPTIONS:
         \\    -h, --help              Show this help message
         \\    -v, --version           Show version information
-        \\    --log-level=LEVEL       Set log level (debug|info|warn|error) [TODO]
+        \\    --log-level=LEVEL       Set log level (debug|info|warn|error|silent)
         \\
         \\DESCRIPTION:
         \\    ghostls is a Language Server Protocol (LSP) server for the Ghostlang

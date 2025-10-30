@@ -3,6 +3,7 @@ const grove = @import("grove");
 const protocol = @import("protocol.zig");
 
 /// SymbolProvider collects document symbols for outline view
+/// Now uses Grove's LSP helpers for simplified implementation
 pub const SymbolProvider = struct {
     allocator: std.mem.Allocator,
 
@@ -10,7 +11,7 @@ pub const SymbolProvider = struct {
         return .{ .allocator = allocator };
     }
 
-    /// Get all document symbols
+    /// Get all document symbols using Grove's extractSymbols helper
     pub fn getSymbols(
         self: *SymbolProvider,
         tree: *const grove.Tree,
@@ -21,7 +22,27 @@ pub const SymbolProvider = struct {
 
         const root = root_opt.?;
 
-        var symbols: std.ArrayList(protocol.DocumentSymbol) = .empty;
+        // Use Grove's LSP helper to extract symbols (replaces ~100 lines of code!)
+        var grove_symbols = try grove.LSP.extractSymbols(
+            self.allocator,
+            root,
+            text,
+            null, // Use default node_kind_map
+        );
+        defer {
+            for (grove_symbols.items) |*sym| {
+                sym.deinit(self.allocator);
+            }
+            grove_symbols.deinit(self.allocator);
+        }
+
+        // Convert Grove symbols to protocol symbols
+        return try self.convertToProtocolSymbols(grove_symbols.items);
+    }
+
+    /// Convert Grove SymbolInfo to protocol DocumentSymbol
+    fn convertToProtocolSymbols(self: *SymbolProvider, grove_symbols: []const grove.LSP.SymbolInfo) ![]protocol.DocumentSymbol {
+        var symbols = try std.ArrayList(protocol.DocumentSymbol).initCapacity(self.allocator, grove_symbols.len);
         errdefer {
             for (symbols.items) |sym| {
                 self.freeSymbol(sym);
@@ -29,8 +50,31 @@ pub const SymbolProvider = struct {
             symbols.deinit(self.allocator);
         }
 
-        // Collect symbols from the tree
-        try self.collectSymbols(root, text, &symbols);
+        for (grove_symbols) |grove_sym| {
+            const name = try self.allocator.dupe(u8, grove_sym.name);
+            errdefer self.allocator.free(name);
+
+            // Convert children recursively (Grove SymbolInfo.children is ArrayList, not optional)
+            const children = if (grove_sym.children.items.len > 0)
+                try self.convertToProtocolSymbols(grove_sym.children.items)
+            else
+                null;
+            errdefer if (children) |ch| {
+                for (ch) |child| {
+                    self.freeSymbol(child);
+                }
+                self.allocator.free(ch);
+            };
+
+            try symbols.append(self.allocator, .{
+                .name = name,
+                .detail = null, // Grove doesn't provide details, could extract from node text later
+                .kind = groveSymbolKindToProtocol(grove_sym.kind),
+                .range = groveRangeToProtocol(grove_sym.range),
+                .selectionRange = groveRangeToProtocol(grove_sym.selection_range),
+                .children = children,
+            });
+        }
 
         return try symbols.toOwnedSlice(self.allocator);
     }
@@ -48,155 +92,50 @@ pub const SymbolProvider = struct {
             self.allocator.free(children);
         }
     }
-
-    /// Collect symbols from a node and its children
-    fn collectSymbols(
-        self: *SymbolProvider,
-        node: grove.Node,
-        text: []const u8,
-        symbols: *std.ArrayList(protocol.DocumentSymbol),
-    ) !void {
-        const kind_str = node.kind();
-
-        // Check if this node represents a symbol
-        const symbol_info = self.getSymbolInfo(kind_str);
-
-        if (symbol_info) |info| {
-            const name = try self.getSymbolName(node, text);
-            const detail = try self.getSymbolDetail(node, text);
-
-            var children: std.ArrayList(protocol.DocumentSymbol) = .empty;
-            errdefer children.deinit(self.allocator);
-
-            // Recursively collect children for container symbols
-            const child_count = node.childCount();
-            var i: u32 = 0;
-            while (i < child_count) : (i += 1) {
-                if (node.child(i)) |child| {
-                    try self.collectSymbols(child, text, &children);
-                }
-            }
-
-            const children_slice = if (children.items.len > 0)
-                try children.toOwnedSlice(self.allocator)
-            else
-                null;
-
-            try symbols.append(self.allocator, .{
-                .name = name,
-                .detail = detail,
-                .kind = info.kind,
-                .range = nodeToRange(node),
-                .selectionRange = nodeToRange(node),
-                .children = children_slice,
-            });
-        } else {
-            // Not a symbol node, but check its children
-            const child_count = node.childCount();
-            var i: u32 = 0;
-            while (i < child_count) : (i += 1) {
-                if (node.child(i)) |child| {
-                    try self.collectSymbols(child, text, symbols);
-                }
-            }
-        }
-    }
-
-    const SymbolInfo = struct {
-        kind: protocol.SymbolKind,
-    };
-
-    /// Get symbol info for a node kind
-    fn getSymbolInfo(self: *SymbolProvider, kind: []const u8) ?SymbolInfo {
-        _ = self;
-
-        if (std.mem.eql(u8, kind, "function_declaration") or
-            std.mem.eql(u8, kind, "function")) {
-            return .{ .kind = .Function };
-        } else if (std.mem.eql(u8, kind, "variable_declaration") or
-                   std.mem.eql(u8, kind, "let_declaration")) {
-            return .{ .kind = .Variable };
-        } else if (std.mem.eql(u8, kind, "const_declaration")) {
-            return .{ .kind = .Constant };
-        } else if (std.mem.eql(u8, kind, "class_declaration") or
-                   std.mem.eql(u8, kind, "class")) {
-            return .{ .kind = .Class };
-        } else if (std.mem.eql(u8, kind, "struct_declaration") or
-                   std.mem.eql(u8, kind, "struct")) {
-            return .{ .kind = .Struct };
-        } else if (std.mem.eql(u8, kind, "enum_declaration") or
-                   std.mem.eql(u8, kind, "enum")) {
-            return .{ .kind = .Enum };
-        } else if (std.mem.eql(u8, kind, "interface_declaration") or
-                   std.mem.eql(u8, kind, "interface")) {
-            return .{ .kind = .Interface };
-        } else if (std.mem.eql(u8, kind, "method_declaration") or
-                   std.mem.eql(u8, kind, "method")) {
-            return .{ .kind = .Method };
-        }
-
-        return null;
-    }
-
-    /// Extract symbol name from node
-    fn getSymbolName(self: *SymbolProvider, node: grove.Node, text: []const u8) ![]const u8 {
-        // Try to find an identifier child
-        const child_count = node.childCount();
-        var i: u32 = 0;
-        while (i < child_count) : (i += 1) {
-            if (node.child(i)) |child| {
-                const child_kind = child.kind();
-                if (std.mem.eql(u8, child_kind, "identifier") or
-                    std.mem.eql(u8, child_kind, "type_identifier")) {
-                    const start = child.startByte();
-                    const end = child.endByte();
-                    if (end > start and end <= text.len) {
-                        return try self.allocator.dupe(u8, text[start..end]);
-                    }
-                }
-            }
-        }
-
-        // Fallback: use node text
-        const start = node.startByte();
-        const end = node.endByte();
-        if (end > start and end <= text.len) {
-            const node_text = text[start..end];
-            // Truncate if too long
-            const max_len = 50;
-            const truncated = if (node_text.len > max_len)
-                node_text[0..max_len]
-            else
-                node_text;
-            return try self.allocator.dupe(u8, truncated);
-        }
-
-        return try self.allocator.dupe(u8, "<unnamed>");
-    }
-
-    /// Get symbol detail (type info, signature, etc.)
-    fn getSymbolDetail(self: *SymbolProvider, node: grove.Node, text: []const u8) !?[]const u8 {
-        _ = node;
-        _ = text;
-        _ = self;
-        // TODO: Extract detailed type information
-        return null;
-    }
 };
 
-/// Convert a tree-sitter node to LSP range
-fn nodeToRange(node: grove.Node) protocol.Range {
-    const start_point = node.startPosition();
-    const end_point = node.endPosition();
+/// Convert Grove SymbolKind to protocol SymbolKind
+fn groveSymbolKindToProtocol(kind: grove.LSP.SymbolKind) protocol.SymbolKind {
+    return switch (kind) {
+        .file => .File,
+        .module => .Module,
+        .namespace => .Namespace,
+        .package => .Package,
+        .class => .Class,
+        .method => .Method,
+        .property => .Property,
+        .field => .Field,
+        .constructor => .Constructor,
+        .@"enum" => .Enum,
+        .interface => .Interface,
+        .function => .Function,
+        .variable => .Variable,
+        .constant => .Constant,
+        .string => .String,
+        .number => .Number,
+        .boolean => .Boolean,
+        .array => .Array,
+        .object => .Object,
+        .key => .Key,
+        .null => .Null,
+        .enum_member => .EnumMember,
+        .@"struct" => .Struct,
+        .event => .Event,
+        .operator => .Operator,
+        .type_parameter => .TypeParameter,
+    };
+}
 
+/// Convert Grove Range to protocol Range
+fn groveRangeToProtocol(range: grove.LSP.Range) protocol.Range {
     return .{
         .start = .{
-            .line = start_point.row,
-            .character = start_point.column,
+            .line = range.start.line,
+            .character = range.start.character,
         },
         .end = .{
-            .line = end_point.row,
-            .character = end_point.column,
+            .line = range.end.line,
+            .character = range.end.character,
         },
     };
 }

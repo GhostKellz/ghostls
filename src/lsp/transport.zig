@@ -1,6 +1,35 @@
 const std = @import("std");
 const protocol = @import("protocol.zig");
 
+/// Log levels for filtering diagnostic output
+pub const LogLevel = enum(u8) {
+    debug = 0,
+    info = 1,
+    warn = 2,
+    err = 3,
+    silent = 4,
+
+    pub fn fromString(s: []const u8) ?LogLevel {
+        if (std.mem.eql(u8, s, "debug")) return .debug;
+        if (std.mem.eql(u8, s, "info")) return .info;
+        if (std.mem.eql(u8, s, "warn")) return .warn;
+        if (std.mem.eql(u8, s, "error")) return .err;
+        if (std.mem.eql(u8, s, "silent")) return .silent;
+        return null;
+    }
+};
+
+/// Global log level setting (can be changed via --log-level flag)
+var current_log_level: LogLevel = .info;
+
+pub fn setLogLevel(level: LogLevel) void {
+    current_log_level = level;
+}
+
+pub fn getLogLevel() LogLevel {
+    return current_log_level;
+}
+
 /// LSP Transport handles reading and writing JSON-RPC messages over stdio
 pub const Transport = struct {
     allocator: std.mem.Allocator,
@@ -73,9 +102,28 @@ pub const Transport = struct {
         _ = try self.stdout.write(message);
     }
 
-    /// Log a message to stderr (for debugging)
+    /// Log a message to stderr (for debugging) at INFO level
     pub fn log(self: *Transport, comptime fmt: []const u8, args: anytype) void {
+        self.logLevel(.info, fmt, args);
+    }
+
+    /// Log a message at a specific level
+    pub fn logLevel(self: *Transport, level: LogLevel, comptime fmt: []const u8, args: anytype) void {
+        // Skip if current log level is higher than message level
+        if (@intFromEnum(current_log_level) > @intFromEnum(level)) {
+            return;
+        }
+
+        const level_str = switch (level) {
+            .debug => "[DEBUG] ",
+            .info => "[INFO]  ",
+            .warn => "[WARN]  ",
+            .err => "[ERROR] ",
+            .silent => return, // Don't log anything for silent
+        };
+
         _ = self.stderr.write("[ghostls] ") catch {};
+        _ = self.stderr.write(level_str) catch {};
         var buf: [4096]u8 = undefined;
         const msg = std.fmt.bufPrint(&buf, fmt, args) catch "[fmt error]";
         _ = self.stderr.write(msg) catch {};
