@@ -38,11 +38,11 @@
         },
         .ghostlang = .{
             .url = "https://github.com/ghostkellz/ghostlang/archive/refs/heads/main.tar.gz",
-            .hash = "ghostlang-0.2.1-_SzSPa8iBgAWfv0ezCCILl8BUlmNtwnM6sbQq4nH6m9U",
+            .hash = "ghostlang-0.2.2-_SzSPdorBgDb16jpad7AWbfK0_D_mSlhFcNaKaLc5v9o",
         },
         .zlog = .{
-            .url = "https://github.com/ghostkellz/zlog/archive/main.tar.gz",
-            .hash = "zlog-0.1.0-kS0sWBTuCAC5w6h8ut-xeX450xFb0gXXf2Ms0VO8MdfS",
+            .url = "https://github.com/ghostkellz/zlog/archive/refs/heads/main.tar.gz",
+            .hash = "zlog-0.1.1-kS0sWOX2CABYF1yAeeeRt0H7G4kx29h8hhimJW37-tQa",
         },
     },
     .paths = .{
