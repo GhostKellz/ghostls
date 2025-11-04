@@ -41,8 +41,8 @@
             .hash = "ghostlang-0.2.2-_SzSPdorBgDb16jpad7AWbfK0_D_mSlhFcNaKaLc5v9o",
         },
         .zlog = .{
-            .url = "https://github.com/ghostkellz/zlog/archive/refs/heads/main.tar.gz",
-            .hash = "zlog-0.1.1-kS0sWOX2CABYF1yAeeeRt0H7G4kx29h8hhimJW37-tQa",
+            .url = "https://github.com/ghostkellz/zlog/archive/main.tar.gz",
+            .hash = "zlog-0.1.2-kS0sWPD2CAAC0AEFacslajC4VOPVe9gInDl3nDKDsAJF",
         },
     },
     .paths = .{
