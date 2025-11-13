@@ -227,12 +227,14 @@ pub const CompletionProvider = struct {
             return "shell";
         } else if (std.mem.eql(u8, identifier, "git")) {
             return "git";
+        } else if (std.mem.eql(u8, identifier, "web3")) {
+            return "web3";
         }
 
         return null;
     }
 
-    /// Add FFI completions for a specific namespace (shell or git)
+    /// Add FFI completions for a specific namespace (shell, git, or web3)
     fn addFFICompletions(
         self: *CompletionProvider,
         namespace: []const u8,
@@ -366,6 +368,9 @@ pub const CompletionProvider = struct {
 
     fn addBuiltinCompletions(allocator: std.mem.Allocator, items: *std.ArrayList(CompletionItem)) !void {
         const builtins = [_]struct { label: []const u8, detail: []const u8, doc: []const u8 }{
+            // Blockchain APIs (GhostLang v0.2.3+)
+            .{ .label = "emit", .detail = "function(event_name: string, data: table)", .doc = "Emit a blockchain event with name and data payload" },
+
             // Editor APIs
             .{ .label = "getCurrentLine", .detail = "function(): number", .doc = "Get current cursor line number" },
             .{ .label = "getLineText", .detail = "function(line: number): string", .doc = "Get text of specified line" },

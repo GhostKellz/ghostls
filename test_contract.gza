@@ -1,0 +1,76 @@
+-- Test smart contract with blockchain features for ghostls
+-- This file tests Web3 completions and emit() support
+
+local balances = {}
+local owner = nil
+local total_supply = 0
+
+function init(initial_supply)
+    owner = web3.getCaller()
+    balances[owner] = initial_supply
+    total_supply = initial_supply
+
+    emit("ContractInitialized", {
+        owner = owner,
+        supply = initial_supply
+    })
+end
+
+function transfer(to, amount)
+    local from = web3.getCaller()
+
+    web3.require(balances[from] >= amount, "Insufficient balance")
+    web3.require(amount > 0, "Amount must be positive")
+    web3.require(to ~= web3.getThis(), "Cannot transfer to contract")
+
+    balances[from] = balances[from] - amount
+    balances[to] = (balances[to] or 0) + amount
+
+    emit("Transfer", {
+        from = from,
+        to = to,
+        amount = amount,
+        timestamp = web3.getTimestamp()
+    })
+
+    return true
+end
+
+function balanceOf(account)
+    return balances[account] or 0
+end
+
+function totalSupply()
+    return total_supply
+end
+
+function getOwner()
+    return owner
+end
+
+-- Test all Web3 API functions for completions
+function testWeb3API()
+    local caller = web3.getCaller()
+    local this_addr = web3.getThis()
+    local balance = web3.getBalance(caller)
+    local timestamp = web3.getTimestamp()
+    local block_num = web3.getBlockNumber()
+    local gas_limit = web3.getGasLimit()
+    local gas_price = web3.getGasPrice()
+    local hash_val = web3.hash("test data")
+
+    web3.transfer(caller, 100)
+
+    -- Storage operations
+    local key = web3.hash("my_key")
+    web3.setStorage(key, hash_val)
+    local stored = web3.getStorage(key)
+    web3.deleteStorage(key)
+
+    -- Events
+    emit("APITested", {
+        caller = caller,
+        block = block_num,
+        time = timestamp
+    })
+end

@@ -502,6 +502,448 @@
           ]
         }
       }
+    },
+    "web3": {
+      "description": "Blockchain and Web3 API functions for smart contracts",
+      "functions": {
+        "getCaller": {
+          "signature": "() -> Address",
+          "description": "Get the address of the transaction sender (msg.sender)",
+          "parameters": [],
+          "returns": {
+            "type": "Address",
+            "description": "The caller's address (32-byte hash)"
+          },
+          "examples": [
+            "local sender = web3.getCaller()",
+            "if web3.getCaller() == owner then -- admin check"
+          ]
+        },
+        "getThis": {
+          "signature": "() -> Address",
+          "description": "Get the address of the current contract",
+          "parameters": [],
+          "returns": {
+            "type": "Address",
+            "description": "The contract's own address"
+          },
+          "examples": [
+            "local contract_addr = web3.getThis()",
+            "web3.require(to ~= web3.getThis(), 'Cannot transfer to self')"
+          ]
+        },
+        "require": {
+          "signature": "(condition: boolean, message: string) -> void",
+          "description": "Assert a condition or revert the transaction with an error message",
+          "parameters": [
+            {
+              "name": "condition",
+              "type": "boolean",
+              "description": "The condition to check"
+            },
+            {
+              "name": "message",
+              "type": "string",
+              "description": "Error message if condition is false"
+            }
+          ],
+          "returns": {
+            "type": "void"
+          },
+          "examples": [
+            "web3.require(amount > 0, 'Amount must be positive')",
+            "web3.require(balances[sender] >= amount, 'Insufficient balance')"
+          ]
+        },
+        "transfer": {
+          "signature": "(to: Address, amount: u64) -> void",
+          "description": "Transfer native tokens to an address",
+          "parameters": [
+            {
+              "name": "to",
+              "type": "Address",
+              "description": "Recipient address"
+            },
+            {
+              "name": "amount",
+              "type": "u64",
+              "description": "Amount to transfer in smallest unit"
+            }
+          ],
+          "returns": {
+            "type": "void"
+          },
+          "examples": [
+            "web3.transfer(recipient, 1000)",
+            "web3.transfer(web3.getCaller(), refund_amount)"
+          ]
+        },
+        "getBalance": {
+          "signature": "(address: Address) -> u64",
+          "description": "Query the native token balance of an address",
+          "parameters": [
+            {
+              "name": "address",
+              "type": "Address",
+              "description": "The address to query"
+            }
+          ],
+          "returns": {
+            "type": "u64",
+            "description": "The balance in smallest unit"
+          },
+          "examples": [
+            "local balance = web3.getBalance(owner)",
+            "if web3.getBalance(web3.getThis()) > 1000 then"
+          ]
+        },
+        "getTimestamp": {
+          "signature": "() -> u64",
+          "description": "Get the current block timestamp (Unix time in seconds)",
+          "parameters": [],
+          "returns": {
+            "type": "u64",
+            "description": "Current block timestamp"
+          },
+          "examples": [
+            "local now = web3.getTimestamp()",
+            "if web3.getTimestamp() > lockup_end then"
+          ]
+        },
+        "getBlockNumber": {
+          "signature": "() -> u64",
+          "description": "Get the current block number",
+          "parameters": [],
+          "returns": {
+            "type": "u64",
+            "description": "Current block height"
+          },
+          "examples": [
+            "local block_num = web3.getBlockNumber()",
+            "local blocks_elapsed = web3.getBlockNumber() - start_block"
+          ]
+        },
+        "getGasLimit": {
+          "signature": "() -> u64",
+          "description": "Get the gas limit for the current transaction",
+          "parameters": [],
+          "returns": {
+            "type": "u64",
+            "description": "Gas limit in gas units"
+          },
+          "examples": [
+            "local gas_limit = web3.getGasLimit()"
+          ]
+        },
+        "getGasPrice": {
+          "signature": "() -> u64",
+          "description": "Get the gas price for the current transaction",
+          "parameters": [],
+          "returns": {
+            "type": "u64",
+            "description": "Gas price in smallest unit per gas"
+          },
+          "examples": [
+            "local gas_price = web3.getGasPrice()"
+          ]
+        },
+        "hash": {
+          "signature": "(data: string) -> Hash",
+          "description": "Compute Blake3 hash of data",
+          "parameters": [
+            {
+              "name": "data",
+              "type": "string",
+              "description": "Data to hash"
+            }
+          ],
+          "returns": {
+            "type": "Hash",
+            "description": "32-byte Blake3 hash"
+          },
+          "examples": [
+            "local hash = web3.hash('hello world')",
+            "local msg_hash = web3.hash(sender .. recipient .. amount)"
+          ]
+        },
+        "verifySignature": {
+          "signature": "(message: Hash, signature: Signature, public_key: PublicKey) -> boolean",
+          "description": "Verify a Dilithium (post-quantum) signature",
+          "parameters": [
+            {
+              "name": "message",
+              "type": "Hash",
+              "description": "Message hash to verify"
+            },
+            {
+              "name": "signature",
+              "type": "Signature",
+              "description": "64-byte Dilithium signature"
+            },
+            {
+              "name": "public_key",
+              "type": "PublicKey",
+              "description": "Public key for verification"
+            }
+          ],
+          "returns": {
+            "type": "boolean",
+            "description": "true if signature is valid, false otherwise"
+          },
+          "examples": [
+            "local valid = web3.verifySignature(msg_hash, sig, pub_key)",
+            "web3.require(web3.verifySignature(hash, signature, signer_key), 'Invalid signature')"
+          ]
+        },
+        "encodeABI": {
+          "signature": "(function_name: string, args: table) -> string",
+          "description": "Encode function call as ABI data (EVM-compatible)",
+          "parameters": [
+            {
+              "name": "function_name",
+              "type": "string",
+              "description": "The function name to encode"
+            },
+            {
+              "name": "args",
+              "type": "table",
+              "description": "Function arguments"
+            }
+          ],
+          "returns": {
+            "type": "string",
+            "description": "ABI-encoded calldata"
+          },
+          "examples": [
+            "local calldata = web3.encodeABI('transfer', {to = addr, amount = 100})"
+          ]
+        },
+        "decodeABI": {
+          "signature": "(data: string, types: table) -> table",
+          "description": "Decode ABI-encoded data into Lua table",
+          "parameters": [
+            {
+              "name": "data",
+              "type": "string",
+              "description": "ABI-encoded data"
+            },
+            {
+              "name": "types",
+              "type": "table",
+              "description": "Type specification for decoding"
+            }
+          ],
+          "returns": {
+            "type": "table",
+            "description": "Decoded values"
+          },
+          "examples": [
+            "local decoded = web3.decodeABI(data, {'address', 'uint256'})"
+          ]
+        },
+        "getStorage": {
+          "signature": "(key: Hash) -> Hash | nil",
+          "description": "Read a value from contract storage",
+          "parameters": [
+            {
+              "name": "key",
+              "type": "Hash",
+              "description": "Storage key (32-byte hash)"
+            }
+          ],
+          "returns": {
+            "type": "Hash | nil",
+            "description": "Stored value, or nil if not found"
+          },
+          "examples": [
+            "local value = web3.getStorage(storage_key)"
+          ]
+        },
+        "setStorage": {
+          "signature": "(key: Hash, value: Hash) -> void",
+          "description": "Write a value to contract storage",
+          "parameters": [
+            {
+              "name": "key",
+              "type": "Hash",
+              "description": "Storage key (32-byte hash)"
+            },
+            {
+              "name": "value",
+              "type": "Hash",
+              "description": "Value to store (32-byte hash)"
+            }
+          ],
+          "returns": {
+            "type": "void"
+          },
+          "examples": [
+            "web3.setStorage(key, value)"
+          ]
+        },
+        "deleteStorage": {
+          "signature": "(key: Hash) -> void",
+          "description": "Delete a value from contract storage",
+          "parameters": [
+            {
+              "name": "key",
+              "type": "Hash",
+              "description": "Storage key to delete"
+            }
+          ],
+          "returns": {
+            "type": "void"
+          },
+          "examples": [
+            "web3.deleteStorage(old_key)"
+          ]
+        },
+        "call": {
+          "signature": "(contract: Address, function_name: string, args: table, value: u64, gas: u64) -> table",
+          "description": "Call another contract function",
+          "parameters": [
+            {
+              "name": "contract",
+              "type": "Address",
+              "description": "Contract address to call"
+            },
+            {
+              "name": "function_name",
+              "type": "string",
+              "description": "Function name to invoke"
+            },
+            {
+              "name": "args",
+              "type": "table",
+              "description": "Function arguments"
+            },
+            {
+              "name": "value",
+              "type": "u64",
+              "description": "Native tokens to send with call"
+            },
+            {
+              "name": "gas",
+              "type": "u64",
+              "description": "Gas limit for the call"
+            }
+          ],
+          "returns": {
+            "type": "table",
+            "description": "Return values from the called function"
+          },
+          "examples": [
+            "local result = web3.call(token_addr, 'balanceOf', {account}, 0, 100000)"
+          ]
+        },
+        "delegateCall": {
+          "signature": "(contract: Address, function_name: string, args: table, gas: u64) -> table",
+          "description": "Delegate call to another contract (preserves caller context)",
+          "parameters": [
+            {
+              "name": "contract",
+              "type": "Address",
+              "description": "Contract address to delegate to"
+            },
+            {
+              "name": "function_name",
+              "type": "string",
+              "description": "Function name to invoke"
+            },
+            {
+              "name": "args",
+              "type": "table",
+              "description": "Function arguments"
+            },
+            {
+              "name": "gas",
+              "type": "u64",
+              "description": "Gas limit for the call"
+            }
+          ],
+          "returns": {
+            "type": "table",
+            "description": "Return values from the delegated function"
+          },
+          "examples": [
+            "local result = web3.delegateCall(impl_addr, 'upgrade', {new_version}, 100000)"
+          ]
+        },
+        "staticCall": {
+          "signature": "(contract: Address, function_name: string, args: table, gas: u64) -> table",
+          "description": "Static call to another contract (read-only, no state changes)",
+          "parameters": [
+            {
+              "name": "contract",
+              "type": "Address",
+              "description": "Contract address to call"
+            },
+            {
+              "name": "function_name",
+              "type": "string",
+              "description": "Function name to invoke"
+            },
+            {
+              "name": "args",
+              "type": "table",
+              "description": "Function arguments"
+            },
+            {
+              "name": "gas",
+              "type": "u64",
+              "description": "Gas limit for the call"
+            }
+          ],
+          "returns": {
+            "type": "table",
+            "description": "Return values from the called function"
+          },
+          "examples": [
+            "local balance = web3.staticCall(token_addr, 'balanceOf', {user}, 50000)"
+          ]
+        },
+        "revert": {
+          "signature": "(message: string) -> void",
+          "description": "Revert the transaction with an error message",
+          "parameters": [
+            {
+              "name": "message",
+              "type": "string",
+              "description": "Error message"
+            }
+          ],
+          "returns": {
+            "type": "void"
+          },
+          "examples": [
+            "web3.revert('Unauthorized access')",
+            "if not authorized then web3.revert('Not authorized') end"
+          ]
+        },
+        "assert": {
+          "signature": "(condition: boolean, message: string) -> void",
+          "description": "Alias for require() - assert a condition or revert",
+          "parameters": [
+            {
+              "name": "condition",
+              "type": "boolean",
+              "description": "The condition to check"
+            },
+            {
+              "name": "message",
+              "type": "string",
+              "description": "Error message if condition is false"
+            }
+          ],
+          "returns": {
+            "type": "void"
+          },
+          "examples": [
+            "web3.assert(initialized, 'Contract not initialized')"
+          ]
+        }
+      },
+      "globals": {}
     }
   },
   "file_associations": {
@@ -512,6 +954,9 @@
   "notes": [
     "All shell.* functions are available in .gshrc.gza and .gsh files",
     "git.* functions require the git command to be available in PATH",
-    "Functions that return nil indicate an error or unsupported operation"
+    "web3.* functions are available in all .gza smart contract files",
+    "Functions that return nil indicate an error or unsupported operation",
+    "Blockchain types: Address (32-byte hash), Hash (32-byte), Signature (64-byte)",
+    "emit() is a global function for event emission in smart contracts"
   ]
 }
