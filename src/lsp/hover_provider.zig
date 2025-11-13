@@ -2,14 +2,24 @@ const std = @import("std");
 const grove = @import("grove");
 const protocol = @import("protocol.zig");
 const ffi_loader = @import("ffi_loader.zig");
+const blockchain_analyzer = @import("blockchain_analyzer.zig");
 
 /// HoverProvider provides hover information for positions in the document
 pub const HoverProvider = struct {
     allocator: std.mem.Allocator,
     ffi_loader: *ffi_loader.FFILoader,
+    blockchain_analyzer: blockchain_analyzer.BlockchainAnalyzer,
 
     pub fn init(allocator: std.mem.Allocator, ffi: *ffi_loader.FFILoader) HoverProvider {
-        return .{ .allocator = allocator, .ffi_loader = ffi };
+        return .{
+            .allocator = allocator,
+            .ffi_loader = ffi,
+            .blockchain_analyzer = blockchain_analyzer.BlockchainAnalyzer.init(allocator),
+        };
+    }
+
+    pub fn deinit(self: *HoverProvider) void {
+        self.blockchain_analyzer.deinit();
     }
 
     /// Get hover information for a position in the document
@@ -119,12 +129,24 @@ pub const HoverProvider = struct {
 
         // Check for common Ghostlang constructs
         if (std.mem.eql(u8, kind, "function_declaration") or
+            std.mem.eql(u8, kind, "local_function_declaration") or
             std.mem.eql(u8, kind, "function")) {
-            return try std.fmt.allocPrint(
-                self.allocator,
-                "**Function Declaration**\n\n```ghostlang\n{s}\n```",
-                .{node_text},
-            );
+            // Estimate gas cost for smart contract functions
+            const gas_estimate = self.blockchain_analyzer.estimateGas(node, full_text) catch 0;
+
+            if (gas_estimate > 0) {
+                return try std.fmt.allocPrint(
+                    self.allocator,
+                    "**Function Declaration**\n\n```ghostlang\n{s}\n```\n\n---\n\n⛽ **Estimated Gas**: ~{d} gas units\n\n_Note: Actual gas usage may vary based on input and state_",
+                    .{ node_text, gas_estimate },
+                );
+            } else {
+                return try std.fmt.allocPrint(
+                    self.allocator,
+                    "**Function Declaration**\n\n```ghostlang\n{s}\n```",
+                    .{node_text},
+                );
+            }
         } else if (std.mem.eql(u8, kind, "variable_declaration") or
                    std.mem.eql(u8, kind, "let_declaration")) {
             return try std.fmt.allocPrint(

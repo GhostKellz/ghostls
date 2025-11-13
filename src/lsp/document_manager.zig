@@ -1,6 +1,7 @@
 const std = @import("std");
 const grove = @import("grove");
 const protocol = @import("protocol.zig");
+const blockchain_analyzer = @import("blockchain_analyzer.zig");
 
 /// Language type for a document
 pub const LanguageType = enum {
@@ -49,6 +50,7 @@ pub const DocumentManager = struct {
     allocator: std.mem.Allocator,
     documents: std.StringHashMap(Document),
     parser: grove.Parser,
+    blockchain_analyzer: blockchain_analyzer.BlockchainAnalyzer,
 
     pub const Document = struct {
         uri: []const u8,
@@ -56,10 +58,12 @@ pub const DocumentManager = struct {
         text: []const u8,
         tree: ?grove.Tree,
         language_type: LanguageType,
+        diagnostics: []blockchain_analyzer.BlockchainDiagnostic,
 
         pub fn deinit(self: *Document, allocator: std.mem.Allocator) void {
             allocator.free(self.uri);
             allocator.free(self.text);
+            allocator.free(self.diagnostics);
             if (self.tree) |*tree| {
                 tree.deinit();
             }
@@ -74,6 +78,7 @@ pub const DocumentManager = struct {
             .allocator = allocator,
             .documents = std.StringHashMap(Document).init(allocator),
             .parser = parser,
+            .blockchain_analyzer = blockchain_analyzer.BlockchainAnalyzer.init(allocator),
         };
     }
 
@@ -84,6 +89,7 @@ pub const DocumentManager = struct {
         }
         self.documents.deinit();
         self.parser.deinit();
+        self.blockchain_analyzer.deinit();
     }
 
     /// Open a document and parse it
@@ -98,12 +104,19 @@ pub const DocumentManager = struct {
         // Parse the document
         const tree = try self.parser.parseUtf8(null, text);
 
+        // Run blockchain analysis for GhostLang files
+        const diagnostics = if (lang_type == .ghostlang)
+            try self.blockchain_analyzer.analyze(&tree, text)
+        else
+            try self.allocator.alloc(blockchain_analyzer.BlockchainDiagnostic, 0);
+
         const doc = Document{
             .uri = try self.allocator.dupe(u8, uri),
             .version = version,
             .text = try self.allocator.dupe(u8, text),
             .tree = tree,
             .language_type = lang_type,
+            .diagnostics = diagnostics,
         };
 
         try self.documents.put(doc.uri, doc);
@@ -113,8 +126,9 @@ pub const DocumentManager = struct {
     pub fn update(self: *DocumentManager, uri: []const u8, text: []const u8, version: i32) !void {
         var doc = self.documents.getPtr(uri) orelse return error.DocumentNotFound;
 
-        // Free old text
+        // Free old text and diagnostics
         self.allocator.free(doc.text);
+        self.allocator.free(doc.diagnostics);
 
         // Parse new text
         if (doc.tree) |*old_tree| {
@@ -127,10 +141,17 @@ pub const DocumentManager = struct {
 
         const new_tree = try self.parser.parseUtf8(null, text);
 
+        // Run blockchain analysis for GhostLang files
+        const new_diagnostics = if (doc.language_type == .ghostlang)
+            try self.blockchain_analyzer.analyze(&new_tree, text)
+        else
+            try self.allocator.alloc(blockchain_analyzer.BlockchainDiagnostic, 0);
+
         // Update document
         doc.text = try self.allocator.dupe(u8, text);
         doc.version = version;
         doc.tree = new_tree;
+        doc.diagnostics = new_diagnostics;
     }
 
     /// Close a document
@@ -144,5 +165,11 @@ pub const DocumentManager = struct {
     /// Get a document by URI
     pub fn get(self: *DocumentManager, uri: []const u8) ?*Document {
         return self.documents.getPtr(uri);
+    }
+
+    /// Get blockchain diagnostics for a document
+    pub fn getDiagnostics(self: *DocumentManager, uri: []const u8) []const blockchain_analyzer.BlockchainDiagnostic {
+        const doc = self.documents.getPtr(uri) orelse return &[_]blockchain_analyzer.BlockchainDiagnostic{};
+        return doc.diagnostics;
     }
 };

@@ -13,6 +13,7 @@ const DocumentHighlightProvider = @import("document_highlight_provider.zig").Doc
 const FoldingRangeProvider = @import("folding_range_provider.zig").FoldingRangeProvider;
 const RenameProvider = @import("rename_provider.zig").RenameProvider;
 const FFILoader = @import("ffi_loader.zig").FFILoader;
+const blockchain_analyzer = @import("blockchain_analyzer.zig");
 
 pub const Server = struct {
     allocator: std.mem.Allocator,
@@ -569,58 +570,95 @@ pub const Server = struct {
         const doc = self.document_manager.get(uri) orelse return;
         const tree_opt = &doc.tree;
         if (tree_opt.*) |*tree| {
-            // Get diagnostics
-            const diagnostics = try self.diagnostic_engine.diagnose(tree, doc.text);
+            // Get syntax diagnostics
+            const syntax_diagnostics = try self.diagnostic_engine.diagnose(tree, doc.text);
             defer {
                 // Free diagnostic messages
-                for (diagnostics) |diag| {
+                for (syntax_diagnostics) |diag| {
                     self.allocator.free(diag.message);
                 }
-                self.allocator.free(diagnostics);
+                self.allocator.free(syntax_diagnostics);
             }
 
-            self.transport.log("Found {d} diagnostics for {s}", .{ diagnostics.len, uri });
+            // Get blockchain diagnostics
+            const blockchain_diagnostics = self.document_manager.getDiagnostics(uri);
 
-        // Build diagnostics JSON array
-        var diag_json: std.ArrayList(u8) = .empty;
-        defer diag_json.deinit(self.allocator);
+            const total_diagnostics = syntax_diagnostics.len + blockchain_diagnostics.len;
+            self.transport.log("Found {d} diagnostics for {s} ({d} syntax, {d} blockchain)", .{
+                total_diagnostics,
+                uri,
+                syntax_diagnostics.len,
+                blockchain_diagnostics.len,
+            });
 
-        try diag_json.appendSlice(self.allocator, "[");
-        for (diagnostics, 0..) |diag, i| {
-            if (i > 0) try diag_json.appendSlice(self.allocator, ",");
+            // Build diagnostics JSON array
+            var diag_json: std.ArrayList(u8) = .empty;
+            defer diag_json.deinit(self.allocator);
 
-            const severity = @intFromEnum(diag.severity orelse .Error);
-            const message_escaped = try self.escapeJson(diag.message);
-            defer self.allocator.free(message_escaped);
+            try diag_json.appendSlice(self.allocator, "[");
 
-            const diag_str = try std.fmt.allocPrint(
+            // Add syntax diagnostics
+            for (syntax_diagnostics, 0..) |diag, i| {
+                if (i > 0) try diag_json.appendSlice(self.allocator, ",");
+
+                const severity = @intFromEnum(diag.severity orelse .Error);
+                const message_escaped = try self.escapeJson(diag.message);
+                defer self.allocator.free(message_escaped);
+
+                const diag_str = try std.fmt.allocPrint(
+                    self.allocator,
+                    "{{\"range\":{{\"start\":{{\"line\":{d},\"character\":{d}}},\"end\":{{\"line\":{d},\"character\":{d}}}}},\"severity\":{d},\"message\":\"{s}\",\"source\":\"ghostls\"}}",
+                    .{
+                        diag.range.start.line,
+                        diag.range.start.character,
+                        diag.range.end.line,
+                        diag.range.end.character,
+                        severity,
+                        message_escaped,
+                    },
+                );
+                defer self.allocator.free(diag_str);
+
+                try diag_json.appendSlice(self.allocator, diag_str);
+            }
+
+            // Add blockchain diagnostics
+            for (blockchain_diagnostics, 0..) |bc_diag, i| {
+                if (syntax_diagnostics.len > 0 or i > 0) try diag_json.appendSlice(self.allocator, ",");
+
+                const severity = @intFromEnum(bc_diag.severity);
+                const message_escaped = try self.escapeJson(bc_diag.message);
+                defer self.allocator.free(message_escaped);
+
+                const diag_str = try std.fmt.allocPrint(
+                    self.allocator,
+                    "{{\"range\":{{\"start\":{{\"line\":{d},\"character\":{d}}},\"end\":{{\"line\":{d},\"character\":{d}}}}},\"severity\":{d},\"message\":\"{s}\",\"source\":\"ghostls-blockchain\"}}",
+                    .{
+                        bc_diag.range.start.line,
+                        bc_diag.range.start.character,
+                        bc_diag.range.end.line,
+                        bc_diag.range.end.character,
+                        severity,
+                        message_escaped,
+                    },
+                );
+                defer self.allocator.free(diag_str);
+
+                try diag_json.appendSlice(self.allocator, diag_str);
+            }
+
+            try diag_json.appendSlice(self.allocator, "]");
+
+            // Build and send notification
+            const uri_escaped = try self.escapeJson(uri);
+            defer self.allocator.free(uri_escaped);
+
+            const notification = try std.fmt.allocPrint(
                 self.allocator,
-                "{{\"range\":{{\"start\":{{\"line\":{d},\"character\":{d}}},\"end\":{{\"line\":{d},\"character\":{d}}}}},\"severity\":{d},\"message\":\"{s}\",\"source\":\"ghostls\"}}",
-                .{
-                    diag.range.start.line,
-                    diag.range.start.character,
-                    diag.range.end.line,
-                    diag.range.end.character,
-                    severity,
-                    message_escaped,
-                },
+                "{{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\",\"params\":{{\"uri\":\"{s}\",\"diagnostics\":{s}}}}}",
+                .{ uri_escaped, diag_json.items },
             );
-            defer self.allocator.free(diag_str);
-
-            try diag_json.appendSlice(self.allocator, diag_str);
-        }
-        try diag_json.appendSlice(self.allocator, "]");
-
-        // Build and send notification
-        const uri_escaped = try self.escapeJson(uri);
-        defer self.allocator.free(uri_escaped);
-
-        const notification = try std.fmt.allocPrint(
-            self.allocator,
-            "{{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\",\"params\":{{\"uri\":\"{s}\",\"diagnostics\":{s}}}}}",
-            .{ uri_escaped, diag_json.items },
-        );
-        defer self.allocator.free(notification);
+            defer self.allocator.free(notification);
 
             try self.transport.writeMessage(notification);
             self.transport.log("Published diagnostics", .{});
