@@ -19,6 +19,10 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const kalix = b.dependency("kalix", .{
+        .target = target,
+        .optimize = optimize,
+    });
     const zlog = b.dependency("zlog", .{
         .target = target,
         .optimize = optimize,
@@ -41,6 +45,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "grove", .module = grove.module("grove") },
             .{ .name = "ghostlang", .module = ghostlang.module("ghostlang") },
+            .{ .name = "kalix", .module = kalix.module("kalix") },
             .{ .name = "zlog", .module = zlog.module("zlog") },
         },
     });
@@ -71,6 +76,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "ghostls", .module = mod },
                 .{ .name = "grove", .module = grove.module("grove") },
                 .{ .name = "ghostlang", .module = ghostlang.module("ghostlang") },
+                .{ .name = "kalix", .module = kalix.module("kalix") },
                 .{ .name = "zlog", .module = zlog.module("zlog") },
             },
         }),

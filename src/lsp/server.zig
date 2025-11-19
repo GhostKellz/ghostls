@@ -568,6 +568,64 @@ pub const Server = struct {
     /// Publish diagnostics for a document
     fn publishDiagnostics(self: *Server, uri: []const u8) !void {
         const doc = self.document_manager.get(uri) orelse return;
+
+        // Handle kalix files separately (no Grove tree)
+        if (doc.language_type == .kalix) {
+            const kalix_diagnostics = self.document_manager.getKalixDiagnostics(uri) catch &[_]protocol.Diagnostic{};
+            defer if (kalix_diagnostics.len > 0) self.document_manager.freeKalixDiagnostics(kalix_diagnostics);
+
+            self.transport.log("Found {d} diagnostics for {s} ({d} kalix)", .{
+                kalix_diagnostics.len,
+                uri,
+                kalix_diagnostics.len,
+            });
+
+            var diag_json: std.ArrayList(u8) = .{};
+            defer diag_json.deinit(self.allocator);
+
+            try diag_json.appendSlice(self.allocator, "[");
+
+            for (kalix_diagnostics, 0..) |kx_diag, i| {
+                if (i > 0) try diag_json.appendSlice(self.allocator, ",");
+
+                const severity = @intFromEnum(kx_diag.severity orelse .Error);
+                const message_escaped = try self.escapeJson(kx_diag.message);
+                defer self.allocator.free(message_escaped);
+
+                const diag_str = try std.fmt.allocPrint(
+                    self.allocator,
+                    "{{\"range\":{{\"start\":{{\"line\":{d},\"character\":{d}}},\"end\":{{\"line\":{d},\"character\":{d}}}}},\"severity\":{d},\"message\":\"{s}\",\"source\":\"kalix\"}}",
+                    .{
+                        kx_diag.range.start.line,
+                        kx_diag.range.start.character,
+                        kx_diag.range.end.line,
+                        kx_diag.range.end.character,
+                        severity,
+                        message_escaped,
+                    },
+                );
+                defer self.allocator.free(diag_str);
+
+                try diag_json.appendSlice(self.allocator, diag_str);
+            }
+
+            try diag_json.appendSlice(self.allocator, "]");
+
+            const uri_escaped = try self.escapeJson(uri);
+            defer self.allocator.free(uri_escaped);
+
+            const notification = try std.fmt.allocPrint(
+                self.allocator,
+                "{{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\",\"params\":{{\"uri\":\"{s}\",\"diagnostics\":{s}}}}}",
+                .{ uri_escaped, diag_json.items },
+            );
+            defer self.allocator.free(notification);
+
+            try self.transport.writeMessage(notification);
+            self.transport.log("Published diagnostics", .{});
+            return;
+        }
+
         const tree_opt = &doc.tree;
         if (tree_opt.*) |*tree| {
             // Get syntax diagnostics
@@ -583,12 +641,17 @@ pub const Server = struct {
             // Get blockchain diagnostics
             const blockchain_diagnostics = self.document_manager.getDiagnostics(uri);
 
-            const total_diagnostics = syntax_diagnostics.len + blockchain_diagnostics.len;
-            self.transport.log("Found {d} diagnostics for {s} ({d} syntax, {d} blockchain)", .{
+            // Get kalix diagnostics if this is a kalix file
+            const kalix_diagnostics = self.document_manager.getKalixDiagnostics(uri) catch &[_]protocol.Diagnostic{};
+            defer if (kalix_diagnostics.len > 0) self.document_manager.freeKalixDiagnostics(kalix_diagnostics);
+
+            const total_diagnostics = syntax_diagnostics.len + blockchain_diagnostics.len + kalix_diagnostics.len;
+            self.transport.log("Found {d} diagnostics for {s} ({d} syntax, {d} blockchain, {d} kalix)", .{
                 total_diagnostics,
                 uri,
                 syntax_diagnostics.len,
                 blockchain_diagnostics.len,
+                kalix_diagnostics.len,
             });
 
             // Build diagnostics JSON array
@@ -638,6 +701,31 @@ pub const Server = struct {
                         bc_diag.range.start.character,
                         bc_diag.range.end.line,
                         bc_diag.range.end.character,
+                        severity,
+                        message_escaped,
+                    },
+                );
+                defer self.allocator.free(diag_str);
+
+                try diag_json.appendSlice(self.allocator, diag_str);
+            }
+
+            // Add kalix diagnostics
+            for (kalix_diagnostics, 0..) |kx_diag, i| {
+                if (syntax_diagnostics.len > 0 or blockchain_diagnostics.len > 0 or i > 0) try diag_json.appendSlice(self.allocator, ",");
+
+                const severity = @intFromEnum(kx_diag.severity orelse .Error);
+                const message_escaped = try self.escapeJson(kx_diag.message);
+                defer self.allocator.free(message_escaped);
+
+                const diag_str = try std.fmt.allocPrint(
+                    self.allocator,
+                    "{{\"range\":{{\"start\":{{\"line\":{d},\"character\":{d}}},\"end\":{{\"line\":{d},\"character\":{d}}}}},\"severity\":{d},\"message\":\"{s}\",\"source\":\"kalix\"}}",
+                    .{
+                        kx_diag.range.start.line,
+                        kx_diag.range.start.character,
+                        kx_diag.range.end.line,
+                        kx_diag.range.end.character,
                         severity,
                         message_escaped,
                     },
