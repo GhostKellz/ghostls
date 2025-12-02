@@ -34,7 +34,7 @@
     .dependencies = .{
         .grove = .{
             .url = "https://github.com/ghostkellz/grove/archive/main.tar.gz",
-            .hash = "grove-0.2.2-rGFsNzQm5gSybNb8PrwKyx-XduiqE6XK_BgRLh6tinoQ",
+            .hash = "grove-0.2.2-rGFsN9Rz6wQN0ZlC86YH9pEKD1wrmjbOWecNVofGjQH8",
         },
         .ghostlang = .{
             .url = "https://github.com/ghostkellz/ghostlang/archive/main.tar.gz",
