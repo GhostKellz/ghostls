@@ -2,62 +2,57 @@ const std = @import("std");
 const Server = @import("lsp/server.zig").Server;
 const transport = @import("lsp/transport.zig");
 
-const VERSION = "0.3.0";
+const VERSION = "0.6.2";
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+pub fn main(init: std.process.Init) !void {
+    const allocator = init.gpa;
+    const io = init.io;
 
     // Parse command-line arguments
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
+    var args_iter = init.minimal.args.iterate();
+    _ = args_iter.next(); // Skip program name
 
-    const stderr = std.fs.File{ .handle = std.posix.STDERR_FILENO };
+    // Set up stderr writer
+    const stderr_file = std.Io.File.stderr();
+    var stderr_buffer: [4096]u8 = undefined;
+    var stderr_writer = std.Io.File.Writer.initStreaming(stderr_file, io, &stderr_buffer);
+    const w = &stderr_writer.interface;
 
     // Handle CLI flags
-    for (args[1..]) |arg| {
+    while (args_iter.next()) |arg| {
         if (std.mem.eql(u8, arg, "--version") or std.mem.eql(u8, arg, "-v")) {
-            _ = try stderr.write("ghostls ");
-            _ = try stderr.write(VERSION);
-            _ = try stderr.write("\n");
+            try w.print("ghostls {s}\n", .{VERSION});
+            try w.flush();
             return;
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
-            try printHelp();
+            try printHelp(w);
+            try w.flush();
             return;
         } else if (std.mem.startsWith(u8, arg, "--log-level=")) {
             const level_str = arg["--log-level=".len..];
             if (transport.LogLevel.fromString(level_str)) |level| {
                 transport.setLogLevel(level);
-                _ = try stderr.write("[ghostls] Log level set to: ");
-                _ = try stderr.write(level_str);
-                _ = try stderr.write("\n");
+                try w.print("[ghostls] Log level set to: {s}\n", .{level_str});
             } else {
-                _ = try stderr.write("Invalid log level: ");
-                _ = try stderr.write(level_str);
-                _ = try stderr.write("\nValid levels: debug, info, warn, error, silent\n");
+                try w.print("Invalid log level: {s}\nValid levels: debug, info, warn, error, silent\n", .{level_str});
                 std.process.exit(1);
             }
         } else {
-            _ = try stderr.write("Unknown argument: ");
-            _ = try stderr.write(arg);
-            _ = try stderr.write("\n");
-            _ = try stderr.write("Run 'ghostls --help' for usage.\n");
+            try w.print("Unknown argument: {s}\nRun 'ghostls --help' for usage.\n", .{arg});
             std.process.exit(1);
         }
     }
 
     // Start LSP server
-    var server = try Server.init(allocator);
+    var server = try Server.init(allocator, io);
     defer server.deinit();
 
     try server.run();
 }
 
-fn printHelp() !void {
-    const stderr = std.fs.File{ .handle = std.posix.STDERR_FILENO };
-    _ = try stderr.write(
-        \\ghostls 0.3.0 - Language Server for Ghostlang
+fn printHelp(w: *std.Io.Writer) !void {
+    try w.writeAll(
+        \\ghostls 0.6.2 - Language Server for Ghostlang
         \\
         \\USAGE:
         \\    ghostls [OPTIONS]

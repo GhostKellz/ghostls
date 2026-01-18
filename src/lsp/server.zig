@@ -34,14 +34,14 @@ pub const Server = struct {
     initialized: bool = false,
     shutdown_requested: bool = false,
 
-    pub fn init(allocator: std.mem.Allocator) !Server {
+    pub fn init(allocator: std.mem.Allocator, io: std.Io) !Server {
         // Initialize FFI loader with embedded definitions
         var ffi_loader = FFILoader.init(allocator);
         try ffi_loader.loadEmbedded();
 
         return .{
             .allocator = allocator,
-            .transport = transport.Transport.init(allocator),
+            .transport = transport.Transport.init(allocator, io),
             .response_builder = transport.ResponseBuilder.init(allocator),
             .document_manager = try DocumentManager.init(allocator),
             .diagnostic_engine = DiagnosticEngine.init(allocator),

@@ -33,28 +33,36 @@ pub fn getLogLevel() LogLevel {
 /// LSP Transport handles reading and writing JSON-RPC messages over stdio
 pub const Transport = struct {
     allocator: std.mem.Allocator,
-    stdin: std.fs.File,
-    stdout: std.fs.File,
-    stderr: std.fs.File,
+    io: std.Io,
+    stdin: std.Io.File,
+    stdout: std.Io.File,
+    stderr: std.Io.File,
+    // Buffers for readers/writers
+    stdin_buffer: [8192]u8 = undefined,
+    stdout_buffer: [8192]u8 = undefined,
+    stderr_buffer: [4096]u8 = undefined,
 
-    pub fn init(allocator: std.mem.Allocator) Transport {
+    pub fn init(allocator: std.mem.Allocator, io: std.Io) Transport {
         return .{
             .allocator = allocator,
-            .stdin = .{ .handle = std.posix.STDIN_FILENO },
-            .stdout = .{ .handle = std.posix.STDOUT_FILENO },
-            .stderr = .{ .handle = std.posix.STDERR_FILENO },
+            .io = io,
+            .stdin = std.Io.File.stdin(),
+            .stdout = std.Io.File.stdout(),
+            .stderr = std.Io.File.stderr(),
         };
     }
 
     /// Read a JSON-RPC message from stdin
     /// Returns owned slice that caller must free
     pub fn readMessage(self: *Transport) ![]const u8 {
+        var reader = std.Io.File.Reader.initStreaming(self.stdin, self.io, &self.stdin_buffer);
+
         var headers = std.StringHashMap([]const u8).init(self.allocator);
         defer headers.deinit();
 
         // Read headers
         while (true) {
-            const line = try self.readLine();
+            const line = try self.readLineFromReader(&reader.interface);
             defer self.allocator.free(line);
 
             // Empty line marks end of headers
@@ -86,9 +94,23 @@ pub const Transport = struct {
         const message = try self.allocator.alloc(u8, content_length);
         errdefer self.allocator.free(message);
 
-        const bytes_read = try self.stdin.read(message);
-        if (bytes_read != content_length) {
-            return error.IncompleteMessage;
+        // Read exactly content_length bytes
+        var total_read: usize = 0;
+        while (total_read < content_length) {
+            var dest = [_][]u8{message[total_read..content_length]};
+            const bytes_read = reader.interface.readVec(&dest) catch |err| switch (err) {
+                error.EndOfStream => return error.IncompleteMessage,
+                error.ReadFailed => return error.IncompleteMessage,
+            };
+            if (bytes_read == 0) {
+                // Try to fill buffer and read again
+                reader.interface.fill(1) catch |err| switch (err) {
+                    error.EndOfStream => return error.IncompleteMessage,
+                    error.ReadFailed => return error.IncompleteMessage,
+                };
+                continue;
+            }
+            total_read += bytes_read;
         }
 
         return message;
@@ -96,10 +118,12 @@ pub const Transport = struct {
 
     /// Write a JSON-RPC message to stdout
     pub fn writeMessage(self: *Transport, message: []const u8) !void {
-        var buf: [128]u8 = undefined;
-        const header = try std.fmt.bufPrint(&buf, "Content-Length: {d}\r\n\r\n", .{message.len});
-        _ = try self.stdout.write(header);
-        _ = try self.stdout.write(message);
+        var writer = std.Io.File.Writer.initStreaming(self.stdout, self.io, &self.stdout_buffer);
+        const w = &writer.interface;
+
+        try w.print("Content-Length: {d}\r\n\r\n", .{message.len});
+        try w.writeAll(message);
+        try w.flush();
     }
 
     /// Log a message to stderr (for debugging) at INFO level
@@ -122,25 +146,34 @@ pub const Transport = struct {
             .silent => return, // Don't log anything for silent
         };
 
-        _ = self.stderr.write("[ghostls] ") catch {};
-        _ = self.stderr.write(level_str) catch {};
-        var buf: [4096]u8 = undefined;
-        const msg = std.fmt.bufPrint(&buf, fmt, args) catch "[fmt error]";
-        _ = self.stderr.write(msg) catch {};
-        _ = self.stderr.write("\n") catch {};
+        var writer = std.Io.File.Writer.initStreaming(self.stderr, self.io, &self.stderr_buffer);
+        const w = &writer.interface;
+
+        w.writeAll("[ghostls] ") catch {};
+        w.writeAll(level_str) catch {};
+        w.print(fmt, args) catch {};
+        w.writeAll("\n") catch {};
+        w.flush() catch {};
     }
 
-    /// Read a line from stdin (helper)
-    fn readLine(self: *Transport) ![]const u8 {
+    /// Read a line from a reader (helper)
+    fn readLineFromReader(self: *Transport, reader: *std.Io.Reader) ![]const u8 {
         var line: std.ArrayList(u8) = .empty;
         errdefer line.deinit(self.allocator);
 
         while (true) {
-            var byte_buf: [1]u8 = undefined;
-            const n = try self.stdin.read(&byte_buf);
-            if (n == 0) return error.EndOfStream;
+            // Try to get a single byte
+            const byte_slice = reader.take(1) catch |err| switch (err) {
+                error.EndOfStream => {
+                    if (line.items.len > 0) {
+                        return try line.toOwnedSlice(self.allocator);
+                    }
+                    return error.EndOfStream;
+                },
+                error.ReadFailed => return error.EndOfStream,
+            };
 
-            const byte = byte_buf[0];
+            const byte = byte_slice[0];
             if (byte == '\n') break;
             if (byte == '\r') continue;
             try line.append(self.allocator, byte);
