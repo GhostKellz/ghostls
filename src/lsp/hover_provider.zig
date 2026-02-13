@@ -188,6 +188,30 @@ pub const HoverProvider = struct {
                 "**Comment**\n\n> {s}",
                 .{node_text},
             );
+        } else if (std.mem.eql(u8, kind, "optional_chain_expression")) {
+            return try std.fmt.allocPrint(
+                self.allocator,
+                "**Optional Chaining** (v0.3.0)\n\n```ghostlang\n{s}\n```\n\nSafely access nested property. Returns `null` if object is `null`.\n\n**Syntax:** `obj?.property`",
+                .{node_text},
+            );
+        } else if (std.mem.eql(u8, kind, "optional_subscript_expression")) {
+            return try std.fmt.allocPrint(
+                self.allocator,
+                "**Optional Subscript** (v0.3.0)\n\n```ghostlang\n{s}\n```\n\nSafely access array/object index. Returns `null` if object is `null`.\n\n**Syntax:** `arr?[index]`",
+                .{node_text},
+            );
+        } else if (std.mem.eql(u8, kind, "optional_call_expression")) {
+            return try std.fmt.allocPrint(
+                self.allocator,
+                "**Optional Call** (v0.3.0)\n\n```ghostlang\n{s}\n```\n\nSafely call function. Returns `null` if function is `null`.\n\n**Syntax:** `fn?.(args)`",
+                .{node_text},
+            );
+        } else if (std.mem.eql(u8, kind, "nullish_coalescing_expression")) {
+            return try std.fmt.allocPrint(
+                self.allocator,
+                "**Nullish Coalescing** (v0.3.0)\n\n```ghostlang\n{s}\n```\n\nReturns right-hand side if left-hand side is `null`.\n\n**Syntax:** `value ?? default`",
+                .{node_text},
+            );
         }
 
         // Default hover with node info
@@ -382,6 +406,36 @@ pub const HoverProvider = struct {
         else if (std.mem.eql(u8, name, "concat")) {
             return try std.fmt.allocPrint(self.allocator,
                 "**Builtin Function** (v0.2.0)\n\n```lua\nconcat(array: Array, separator: string): string\n```\n\nJoins array elements into string with separator.\n\n**Example:**\n```lua\nvar fruits = {{\"apple\", \"banana\", \"cherry\"}}\nvar csv = concat(fruits, \", \")\n-- Result: \"apple, banana, cherry\"\n```", .{});
+        }
+
+        // Functional utilities (v0.3.0)
+        else if (std.mem.eql(u8, name, "map")) {
+            return try std.fmt.allocPrint(self.allocator,
+                "**Builtin Function** (v0.3.0)\n\n```lua\nmap(array: Array, fn: function): Array\n```\n\nApply function to each element and return new array.\n\n**Example:**\n```lua\nvar nums = [1, 2, 3]\nvar doubled = map(nums, function(x) {{ return x * 2 }})\n-- Result: [2, 4, 6]\n```", .{});
+        } else if (std.mem.eql(u8, name, "filter")) {
+            return try std.fmt.allocPrint(self.allocator,
+                "**Builtin Function** (v0.3.0)\n\n```lua\nfilter(array: Array, fn: function): Array\n```\n\nFilter array elements where function returns truthy value.\n\n**Example:**\n```lua\nvar nums = [1, 2, 3, 4, 5]\nvar evens = filter(nums, function(x) {{ return x % 2 == 0 }})\n-- Result: [2, 4]\n```", .{});
+        } else if (std.mem.eql(u8, name, "sort")) {
+            return try std.fmt.allocPrint(self.allocator,
+                "**Builtin Function** (v0.3.0)\n\n```lua\nsort(array: Array, compare?: function): Array\n```\n\nSort array elements. Optionally provide custom comparator.\n\n**Example:**\n```lua\nvar nums = [3, 1, 4, 1, 5]\nvar sorted = sort(nums)\n-- Result: [1, 1, 3, 4, 5]\n```", .{});
+        } else if (std.mem.eql(u8, name, "keys")) {
+            return try std.fmt.allocPrint(self.allocator,
+                "**Builtin Function** (v0.3.0)\n\n```lua\nkeys(object: Object): Array\n```\n\nGet array of object keys.\n\n**Example:**\n```lua\nvar obj = {{ name: \"Alice\", age: 30 }}\nvar k = keys(obj)\n-- Result: [\"name\", \"age\"]\n```", .{});
+        } else if (std.mem.eql(u8, name, "values")) {
+            return try std.fmt.allocPrint(self.allocator,
+                "**Builtin Function** (v0.3.0)\n\n```lua\nvalues(object: Object): Array\n```\n\nGet array of object values.\n\n**Example:**\n```lua\nvar obj = {{ name: \"Alice\", age: 30 }}\nvar v = values(obj)\n-- Result: [\"Alice\", 30]\n```", .{});
+        }
+
+        // Type utilities (v0.3.0)
+        else if (std.mem.eql(u8, name, "type")) {
+            return try std.fmt.allocPrint(self.allocator,
+                "**Builtin Function** (v0.3.0)\n\n```lua\ntype(value: any): string\n```\n\nGet type of value as string.\n\n**Example:**\n```lua\ntype(42)       -- \"number\"\ntype(\"hello\")  -- \"string\"\ntype([1, 2])   -- \"array\"\ntype(null)     -- \"null\"\n```", .{});
+        } else if (std.mem.eql(u8, name, "tostring")) {
+            return try std.fmt.allocPrint(self.allocator,
+                "**Builtin Function** (v0.3.0)\n\n```lua\ntostring(value: any): string\n```\n\nConvert value to string.\n\n**Example:**\n```lua\ntostring(42)     -- \"42\"\ntostring(true)   -- \"true\"\ntostring(null)   -- \"null\"\n```", .{});
+        } else if (std.mem.eql(u8, name, "tonumber")) {
+            return try std.fmt.allocPrint(self.allocator,
+                "**Builtin Function** (v0.3.0)\n\n```lua\ntonumber(value: any): number\n```\n\nConvert value to number.\n\n**Example:**\n```lua\ntonumber(\"42\")    -- 42\ntonumber(\"3.14\")  -- 3.14\ntonumber(true)    -- 1\n```", .{});
         }
 
         return null;

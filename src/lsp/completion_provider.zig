@@ -31,14 +31,14 @@ pub const CompletionProvider = struct {
 
         // Filter completions based on context
         switch (context.kind) {
-            .AfterDot => {
+            .AfterDot, .AfterOptionalChain => {
                 // Check if we're after "shell." or "git." namespace
                 if (context.namespace) |ns| {
                     if (supports_shell_ffi) {
                         try self.addFFICompletions(ns, &items);
                     }
                 } else {
-                    // Regular object methods
+                    // Regular object methods (works for both . and ?.)
                     try addObjectMethodCompletions(self.allocator, &items);
                 }
             },
@@ -85,6 +85,7 @@ pub const CompletionProvider = struct {
 
         const ContextKind = enum {
             AfterDot,
+            AfterOptionalChain, // After ?. for optional chaining
             AfterColon,
             InFunctionBody,
             TopLevel,
@@ -105,6 +106,12 @@ pub const CompletionProvider = struct {
         if (offset > 0 and offset <= text.len) {
             const char_before = text[offset - 1];
             if (char_before == '.') {
+                // Check for optional chaining ?.
+                if (offset > 1 and text[offset - 2] == '?') {
+                    // Optional chaining - show same completions as regular dot
+                    const namespace = try self.detectNamespace(text, offset);
+                    return .{ .kind = .AfterOptionalChain, .namespace = namespace };
+                }
                 // Check if we're after "shell" or "git" namespace
                 const namespace = try self.detectNamespace(text, offset);
                 return .{ .kind = .AfterDot, .namespace = namespace };
@@ -450,6 +457,18 @@ pub const CompletionProvider = struct {
 
             // Table concat (v0.2.0)
             .{ .label = "concat", .detail = "function(array: Array, separator: string): string", .doc = "Join array elements into string with separator" },
+
+            // Functional utilities (v0.3.0)
+            .{ .label = "map", .detail = "function(array: Array, fn: function): Array", .doc = "Apply function to each element and return new array" },
+            .{ .label = "filter", .detail = "function(array: Array, fn: function): Array", .doc = "Filter array elements where function returns truthy" },
+            .{ .label = "sort", .detail = "function(array: Array, compare?: function): Array", .doc = "Sort array elements (optionally with custom comparator)" },
+            .{ .label = "keys", .detail = "function(object: Object): Array", .doc = "Get array of object keys" },
+            .{ .label = "values", .detail = "function(object: Object): Array", .doc = "Get array of object values" },
+
+            // Type utilities (v0.3.0)
+            .{ .label = "type", .detail = "function(value: any): string", .doc = "Get type of value as string" },
+            .{ .label = "tostring", .detail = "function(value: any): string", .doc = "Convert value to string" },
+            .{ .label = "tonumber", .detail = "function(value: any): number", .doc = "Convert value to number" },
         };
 
         for (builtins) |builtin| {

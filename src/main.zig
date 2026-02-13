@@ -2,7 +2,7 @@ const std = @import("std");
 const Server = @import("lsp/server.zig").Server;
 const transport = @import("lsp/transport.zig");
 
-const VERSION = "0.6.2";
+const VERSION = "0.7.0";
 
 pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
@@ -52,7 +52,7 @@ pub fn main(init: std.process.Init) !void {
 
 fn printHelp(w: *std.Io.Writer) !void {
     try w.writeAll(
-        \\ghostls 0.6.2 - Language Server for Ghostlang
+        \\ghostls 0.7.0 - Language Server for Ghostlang
         \\
         \\USAGE:
         \\    ghostls [OPTIONS]
