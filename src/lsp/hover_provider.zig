@@ -261,7 +261,7 @@ pub const HoverProvider = struct {
         func: *const ffi_loader.FFIFunction,
     ) ![]const u8 {
         // Build markdown documentation
-        var doc = std.ArrayList(u8){};
+        var doc = std.ArrayList(u8).empty;
         defer doc.deinit(self.allocator);
 
         // Function signature

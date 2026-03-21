@@ -45,7 +45,7 @@ pub const DiagnosticEngine = struct {
             };
 
             // Build comprehensive diagnostic message
-            var message = std.ArrayList(u8){};
+            var message = std.ArrayList(u8).empty;
             defer message.deinit(self.allocator);
 
             try message.appendSlice(self.allocator, grove_err.message);

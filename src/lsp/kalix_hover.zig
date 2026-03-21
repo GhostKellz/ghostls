@@ -30,7 +30,7 @@ pub const KalixHoverProvider = struct {
         // For now, return basic contract info if metadata exists
         if (result.metadata.contracts.len == 0) return null;
 
-        var info = std.ArrayList(u8) = .{};
+        var info: std.ArrayList(u8) = .empty;
         defer info.deinit(self.allocator);
 
         try info.appendSlice(self.allocator, "**Kalix Smart Contracts**\n\n");

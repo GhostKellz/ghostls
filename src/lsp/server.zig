@@ -580,7 +580,7 @@ pub const Server = struct {
                 kalix_diagnostics.len,
             });
 
-            var diag_json: std.ArrayList(u8) = .{};
+            var diag_json: std.ArrayList(u8) = .empty;
             defer diag_json.deinit(self.allocator);
 
             try diag_json.appendSlice(self.allocator, "[");

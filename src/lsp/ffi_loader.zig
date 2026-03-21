@@ -228,7 +228,7 @@ pub const FFILoader = struct {
         const description = if (obj.get("description")) |d| d.string else "";
 
         // Parse parameters
-        var params = std.ArrayList(FFIFunction.Parameter){};
+        var params = std.ArrayList(FFIFunction.Parameter).empty;
         defer params.deinit(self.allocator);
 
         if (obj.get("parameters")) |params_obj| {
@@ -258,7 +258,7 @@ pub const FFILoader = struct {
         };
 
         // Parse examples
-        var examples = std.ArrayList([]const u8){};
+        var examples = std.ArrayList([]const u8).empty;
         defer examples.deinit(self.allocator);
 
         if (obj.get("examples")) |examples_obj| {

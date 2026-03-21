@@ -21,7 +21,7 @@ pub const KalixDiagnosticProvider = struct {
         var result = try kalix.frontend.api.analyzeSource(self.allocator, source);
         defer result.deinit();
 
-        var diagnostics: std.ArrayList(protocol.Diagnostic) = .{};
+        var diagnostics: std.ArrayList(protocol.Diagnostic) = .empty;
         errdefer {
             for (diagnostics.items) |*diag| {
                 self.allocator.free(diag.message);

@@ -17,7 +17,7 @@ pub const KalixCompletionProvider = struct {
 
     /// Get completion items for kalix
     pub fn complete(self: *KalixCompletionProvider) ![]const CompletionItem {
-        var items: std.ArrayList(CompletionItem) = .{};
+        var items: std.ArrayList(CompletionItem) = .empty;
         errdefer items.deinit(self.allocator);
 
         // Kalix keywords
