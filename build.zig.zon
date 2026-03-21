@@ -33,16 +33,16 @@
     // internet connectivity.
     .dependencies = .{
         .grove = .{
-            .url = "https://github.com/ghostkellz/grove/archive/refs/tags/v0.2.5.tar.gz",
-            .hash = "grove-0.2.5-rGFsN-CJ9AR9jnB7CNYIUnHXVLjaanskLyjfiWvRvZu7",
+            .url = "https://github.com/ghostkellz/grove/archive/refs/tags/v0.2.6.tar.gz",
+            .hash = "grove-0.2.6-rGFsN-CJ9ATMpHyMEz3yfmotFSb5_CPF_rxuoFkrqzuo",
         },
         .ghostlang = .{
             .url = "https://github.com/ghostkellz/ghostlang/archive/refs/tags/v0.2.7.tar.gz",
             .hash = "ghostlang-0.2.7-_SzSPZIvCAAA5xi6Wnj0dm6w7uVFv_z4O_Z5Qw0_7Tai",
         },
         .zlog = .{
-            .url = "https://github.com/ghostkellz/zlog/archive/refs/tags/v0.1.4.tar.gz",
-            .hash = "zlog-0.1.4-kS0sWBoECQDzyXRS7L7Swea0U_0gC5Mbl40T2bPKcM-g",
+            .url = "https://github.com/ghostkellz/zlog/archive/refs/tags/v0.1.5.tar.gz",
+            .hash = "zlog-0.1.5-kS0sWFYECQC0u4scyruW0B2X1mPnZMP5XG35AscBBKLo",
         },
         .kalix = .{
             .url = "https://github.com/ghostkellz/kalix/archive/refs/tags/v0.1.0.tar.gz",
