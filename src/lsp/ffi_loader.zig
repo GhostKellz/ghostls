@@ -62,15 +62,15 @@ pub const FFIGlobal = struct {
 pub const FFINamespace = struct {
     name: []const u8,
     description: []const u8,
-    functions: std.StringArrayHashMap(FFIFunction),
-    globals: std.StringArrayHashMap(FFIGlobal),
+    functions: std.StringArrayHashMapUnmanaged(FFIFunction),
+    globals: std.StringArrayHashMapUnmanaged(FFIGlobal),
 
     pub fn init(allocator: std.mem.Allocator, name: []const u8, description: []const u8) !FFINamespace {
         return .{
             .name = try allocator.dupe(u8, name),
             .description = try allocator.dupe(u8, description),
-            .functions = std.StringArrayHashMap(FFIFunction).init(allocator),
-            .globals = std.StringArrayHashMap(FFIGlobal).init(allocator),
+            .functions = .empty,
+            .globals = .empty,
         };
     }
 
@@ -83,28 +83,28 @@ pub const FFINamespace = struct {
             var func = entry.value_ptr.*;
             func.deinit(allocator);
         }
-        self.functions.deinit();
+        self.functions.deinit(allocator);
 
         var global_iter = self.globals.iterator();
         while (global_iter.next()) |entry| {
             var global = entry.value_ptr.*;
             global.deinit(allocator);
         }
-        self.globals.deinit();
+        self.globals.deinit(allocator);
     }
 };
 
 /// FFI Definitions loader
 pub const FFILoader = struct {
     allocator: std.mem.Allocator,
-    namespaces: std.StringArrayHashMap(FFINamespace),
-    file_associations: std.StringArrayHashMap([][]const u8),
+    namespaces: std.StringArrayHashMapUnmanaged(FFINamespace),
+    file_associations: std.StringArrayHashMapUnmanaged([][]const u8),
 
     pub fn init(allocator: std.mem.Allocator) FFILoader {
         return .{
             .allocator = allocator,
-            .namespaces = std.StringArrayHashMap(FFINamespace).init(allocator),
-            .file_associations = std.StringArrayHashMap([][]const u8).init(allocator),
+            .namespaces = .empty,
+            .file_associations = .empty,
         };
     }
 
@@ -114,7 +114,7 @@ pub const FFILoader = struct {
             var ns = entry.value_ptr.*;
             ns.deinit(self.allocator);
         }
-        self.namespaces.deinit();
+        self.namespaces.deinit(self.allocator);
 
         var assoc_iter = self.file_associations.iterator();
         while (assoc_iter.next()) |entry| {
@@ -123,7 +123,7 @@ pub const FFILoader = struct {
             }
             self.allocator.free(entry.value_ptr.*);
         }
-        self.file_associations.deinit();
+        self.file_associations.deinit(self.allocator);
     }
 
     /// Load FFI definitions from JSON file
@@ -178,7 +178,7 @@ pub const FFILoader = struct {
                         const func_obj = func_entry.value_ptr.*.object;
 
                         const func = try self.parseFunctionDefinition(func_name, func_obj);
-                        try namespace.functions.put(func.name, func);
+                        try namespace.functions.put(self.allocator, func.name, func);
                     }
                 }
 
@@ -192,11 +192,11 @@ pub const FFILoader = struct {
                         const global_obj = global_entry.value_ptr.*.object;
 
                         const global = try self.parseGlobalDefinition(global_name, global_obj);
-                        try namespace.globals.put(global.name, global);
+                        try namespace.globals.put(self.allocator, global.name, global);
                     }
                 }
 
-                try self.namespaces.put(namespace.name, namespace);
+                try self.namespaces.put(self.allocator, namespace.name, namespace);
             }
         }
 
@@ -214,7 +214,7 @@ pub const FFILoader = struct {
                     extensions[i] = try self.allocator.dupe(u8, ext_value.string);
                 }
 
-                try self.file_associations.put(category, extensions);
+                try self.file_associations.put(self.allocator, category, extensions);
             }
         }
     }
@@ -248,9 +248,9 @@ pub const FFILoader = struct {
         }
 
         // Parse return type
-        const returns_obj = if (obj.get("returns")) |r| r.object else std.json.ObjectMap.init(self.allocator);
-        const return_type = if (returns_obj.get("type")) |t| t.string else "void";
-        const return_desc = if (returns_obj.get("description")) |d| d.string else null;
+        const maybe_returns_obj = if (obj.get("returns")) |r| r.object else null;
+        const return_type = if (maybe_returns_obj) |ro| if (ro.get("type")) |t| t.string else "void" else "void";
+        const return_desc = if (maybe_returns_obj) |ro| if (ro.get("description")) |d| d.string else null else null;
 
         const returns = FFIFunction.Return{
             .type = try self.allocator.dupe(u8, return_type),
@@ -296,13 +296,13 @@ pub const FFILoader = struct {
     }
 
     /// Get all functions in a namespace
-    pub fn getFunctions(self: *const FFILoader, namespace: []const u8) ?*const std.StringArrayHashMap(FFIFunction) {
+    pub fn getFunctions(self: *const FFILoader, namespace: []const u8) ?*const std.StringArrayHashMapUnmanaged(FFIFunction) {
         const ns = self.namespaces.getPtr(namespace) orelse return null;
         return &ns.functions;
     }
 
     /// Get all globals in a namespace
-    pub fn getGlobals(self: *const FFILoader, namespace: []const u8) ?*const std.StringArrayHashMap(FFIGlobal) {
+    pub fn getGlobals(self: *const FFILoader, namespace: []const u8) ?*const std.StringArrayHashMapUnmanaged(FFIGlobal) {
         const ns = self.namespaces.getPtr(namespace) orelse return null;
         return &ns.globals;
     }

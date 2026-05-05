@@ -196,7 +196,7 @@ pub const Server = struct {
         const capabilities_json = try std.fmt.allocPrint(
             self.allocator,
             \\{{"positionEncoding":"utf-16","textDocumentSync":{{"openClose":true,"change":1,"save":{{"includeText":true}}}},"hoverProvider":true,"completionProvider":{{"triggerCharacters":[".",":"]}},"definitionProvider":true,"referencesProvider":true,"workspaceSymbolProvider":true,"documentSymbolProvider":true,"documentHighlightProvider":true,"foldingRangeProvider":true,"renameProvider":{{"prepareProvider":true}},"semanticTokensProvider":{{"legend":{{"tokenTypes":["namespace","type","class","enum","interface","struct","typeParameter","parameter","variable","property","enumMember","event","function","method","macro","keyword","modifier","comment","string","number","regexp","operator"],"tokenModifiers":["declaration","definition","readonly","static","deprecated","abstract","async","modification","documentation","defaultLibrary"]}},"range":false,"full":true}}}}
-            ,
+        ,
             .{},
         );
         defer self.allocator.free(capabilities_json);
@@ -204,7 +204,7 @@ pub const Server = struct {
         const result_json = try std.fmt.allocPrint(
             self.allocator,
             \\{{"capabilities":{s},"serverInfo":{{"name":"ghostls","version":"0.0.1-alpha"}}}}
-            ,
+        ,
             .{capabilities_json},
         );
         defer self.allocator.free(result_json);
@@ -569,63 +569,6 @@ pub const Server = struct {
     fn publishDiagnostics(self: *Server, uri: []const u8) !void {
         const doc = self.document_manager.get(uri) orelse return;
 
-        // Handle kalix files separately (no Grove tree)
-        if (doc.language_type == .kalix) {
-            const kalix_diagnostics = self.document_manager.getKalixDiagnostics(uri) catch &[_]protocol.Diagnostic{};
-            defer if (kalix_diagnostics.len > 0) self.document_manager.freeKalixDiagnostics(kalix_diagnostics);
-
-            self.transport.log("Found {d} diagnostics for {s} ({d} kalix)", .{
-                kalix_diagnostics.len,
-                uri,
-                kalix_diagnostics.len,
-            });
-
-            var diag_json: std.ArrayList(u8) = .empty;
-            defer diag_json.deinit(self.allocator);
-
-            try diag_json.appendSlice(self.allocator, "[");
-
-            for (kalix_diagnostics, 0..) |kx_diag, i| {
-                if (i > 0) try diag_json.appendSlice(self.allocator, ",");
-
-                const severity = @intFromEnum(kx_diag.severity orelse .Error);
-                const message_escaped = try self.escapeJson(kx_diag.message);
-                defer self.allocator.free(message_escaped);
-
-                const diag_str = try std.fmt.allocPrint(
-                    self.allocator,
-                    "{{\"range\":{{\"start\":{{\"line\":{d},\"character\":{d}}},\"end\":{{\"line\":{d},\"character\":{d}}}}},\"severity\":{d},\"message\":\"{s}\",\"source\":\"kalix\"}}",
-                    .{
-                        kx_diag.range.start.line,
-                        kx_diag.range.start.character,
-                        kx_diag.range.end.line,
-                        kx_diag.range.end.character,
-                        severity,
-                        message_escaped,
-                    },
-                );
-                defer self.allocator.free(diag_str);
-
-                try diag_json.appendSlice(self.allocator, diag_str);
-            }
-
-            try diag_json.appendSlice(self.allocator, "]");
-
-            const uri_escaped = try self.escapeJson(uri);
-            defer self.allocator.free(uri_escaped);
-
-            const notification = try std.fmt.allocPrint(
-                self.allocator,
-                "{{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\",\"params\":{{\"uri\":\"{s}\",\"diagnostics\":{s}}}}}",
-                .{ uri_escaped, diag_json.items },
-            );
-            defer self.allocator.free(notification);
-
-            try self.transport.writeMessage(notification);
-            self.transport.log("Published diagnostics", .{});
-            return;
-        }
-
         const tree_opt = &doc.tree;
         if (tree_opt.*) |*tree| {
             // Get syntax diagnostics
@@ -641,17 +584,12 @@ pub const Server = struct {
             // Get blockchain diagnostics
             const blockchain_diagnostics = self.document_manager.getDiagnostics(uri);
 
-            // Get kalix diagnostics if this is a kalix file
-            const kalix_diagnostics = self.document_manager.getKalixDiagnostics(uri) catch &[_]protocol.Diagnostic{};
-            defer if (kalix_diagnostics.len > 0) self.document_manager.freeKalixDiagnostics(kalix_diagnostics);
-
-            const total_diagnostics = syntax_diagnostics.len + blockchain_diagnostics.len + kalix_diagnostics.len;
-            self.transport.log("Found {d} diagnostics for {s} ({d} syntax, {d} blockchain, {d} kalix)", .{
+            const total_diagnostics = syntax_diagnostics.len + blockchain_diagnostics.len;
+            self.transport.log("Found {d} diagnostics for {s} ({d} syntax, {d} blockchain)", .{
                 total_diagnostics,
                 uri,
                 syntax_diagnostics.len,
                 blockchain_diagnostics.len,
-                kalix_diagnostics.len,
             });
 
             // Build diagnostics JSON array
@@ -701,31 +639,6 @@ pub const Server = struct {
                         bc_diag.range.start.character,
                         bc_diag.range.end.line,
                         bc_diag.range.end.character,
-                        severity,
-                        message_escaped,
-                    },
-                );
-                defer self.allocator.free(diag_str);
-
-                try diag_json.appendSlice(self.allocator, diag_str);
-            }
-
-            // Add kalix diagnostics
-            for (kalix_diagnostics, 0..) |kx_diag, i| {
-                if (syntax_diagnostics.len > 0 or blockchain_diagnostics.len > 0 or i > 0) try diag_json.appendSlice(self.allocator, ",");
-
-                const severity = @intFromEnum(kx_diag.severity orelse .Error);
-                const message_escaped = try self.escapeJson(kx_diag.message);
-                defer self.allocator.free(message_escaped);
-
-                const diag_str = try std.fmt.allocPrint(
-                    self.allocator,
-                    "{{\"range\":{{\"start\":{{\"line\":{d},\"character\":{d}}},\"end\":{{\"line\":{d},\"character\":{d}}}}},\"severity\":{d},\"message\":\"{s}\",\"source\":\"kalix\"}}",
-                    .{
-                        kx_diag.range.start.line,
-                        kx_diag.range.start.character,
-                        kx_diag.range.end.line,
-                        kx_diag.range.end.character,
                         severity,
                         message_escaped,
                     },
@@ -1181,11 +1094,7 @@ pub const Server = struct {
 
         if (range_opt) |range| {
             // Build range JSON
-            const range_str = try std.fmt.allocPrint(
-                self.allocator,
-                "{{\"start\":{{\"line\":{d},\"character\":{d}}},\"end\":{{\"line\":{d},\"character\":{d}}}}}",
-                .{ range.start.line, range.start.character, range.end.line, range.end.character }
-            );
+            const range_str = try std.fmt.allocPrint(self.allocator, "{{\"start\":{{\"line\":{d},\"character\":{d}}},\"end\":{{\"line\":{d},\"character\":{d}}}}}", .{ range.start.line, range.start.character, range.end.line, range.end.character });
             defer self.allocator.free(range_str);
 
             const id_str = switch (self.jsonIdToProtocolId(id)) {
@@ -1259,13 +1168,7 @@ pub const Server = struct {
                     if (i > 0) {
                         try json_parts.append(self.allocator, try self.allocator.dupe(u8, ","));
                     }
-                    try json_parts.append(self.allocator, try std.fmt.allocPrint(
-                        self.allocator,
-                        "{{\"range\":{{\"start\":{{\"line\":{d},\"character\":{d}}},\"end\":{{\"line\":{d},\"character\":{d}}}}},\"newText\":\"{s}\"}}",
-                        .{ text_edit.range.start.line, text_edit.range.start.character,
-                           text_edit.range.end.line, text_edit.range.end.character,
-                           text_edit.new_text }
-                    ));
+                    try json_parts.append(self.allocator, try std.fmt.allocPrint(self.allocator, "{{\"range\":{{\"start\":{{\"line\":{d},\"character\":{d}}},\"end\":{{\"line\":{d},\"character\":{d}}}}},\"newText\":\"{s}\"}}", .{ text_edit.range.start.line, text_edit.range.start.character, text_edit.range.end.line, text_edit.range.end.character, text_edit.new_text }));
                 }
 
                 try json_parts.append(self.allocator, try self.allocator.dupe(u8, "]"));
@@ -1282,7 +1185,7 @@ pub const Server = struct {
             defer self.allocator.free(json);
             var offset: usize = 0;
             for (json_parts.items) |part| {
-                @memcpy(json[offset..offset + part.len], part);
+                @memcpy(json[offset .. offset + part.len], part);
                 offset += part.len;
             }
 

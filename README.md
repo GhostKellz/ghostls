@@ -5,12 +5,12 @@
 
 **Native Zig Language Server for the Ghostlang Ecosystem**
 
-![zig](https://img.shields.io/badge/Built%20with-Zig-yellow?logo=zig)
-![tree-sitter](https://img.shields.io/badge/Parser-TreeSitter-7B68EE?logo=treesitter)
-![lsp](https://img.shields.io/badge/Protocol-Language%20Server%20Protocol-blue)
-![ghostlang](https://img.shields.io/badge/Language-Ghostlang-7FFFD4)
-![grove](https://img.shields.io/badge/Integration-Grove-green)
-![grim](https://img.shields.io/badge/Editor-Grim%20IDE-gray)
+<p align="center">
+  <img src="https://img.shields.io/badge/Zig-F7A41D?style=for-the-badge&logo=zig&logoColor=white" alt="Zig">
+  <img src="https://img.shields.io/badge/Tree--sitter-6EBF8B?style=for-the-badge&logo=treesitter&logoColor=white" alt="Tree-sitter">
+  <img src="https://img.shields.io/badge/LSP-007ACC?style=for-the-badge&logo=visualstudiocode&logoColor=white" alt="LSP">
+  <img src="https://img.shields.io/badge/Ghostlang-7FFFD4?style=for-the-badge&logoColor=black" alt="Ghostlang">
+</p>
 
 </div>
 

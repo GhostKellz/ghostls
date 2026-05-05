@@ -1,29 +1,22 @@
 const std = @import("std");
 const grove = @import("grove");
-const protocol = @import("protocol.zig");
 const blockchain_analyzer = @import("blockchain_analyzer.zig");
-const kalix_diagnostics = @import("kalix_diagnostics.zig");
 
 /// Language type for a document
 pub const LanguageType = enum {
-    ghostlang, // .gza, .ghost files
+    ghostlang, // .gla files
     gshell, // .gsh files (pure shell scripts)
-    gshell_config, // .gshrc.gza, .gshrc files (shell config with ghostlang)
-    kalix, // .kalix files (smart contracts)
+    gshell_config, // .gshrc.gla, .gshrc files (shell config with ghostlang)
 
     /// Detect language type from URI/filename
     pub fn fromUri(uri: []const u8) LanguageType {
-        if (std.mem.endsWith(u8, uri, ".kalix")) {
-            return .kalix;
-        } else if (std.mem.endsWith(u8, uri, ".gshrc.gza")) {
+        if (std.mem.endsWith(u8, uri, ".gshrc.gla")) {
             return .gshell_config;
         } else if (std.mem.endsWith(u8, uri, ".gshrc")) {
             return .gshell_config;
         } else if (std.mem.endsWith(u8, uri, ".gsh")) {
             return .gshell;
-        } else if (std.mem.endsWith(u8, uri, ".gza")) {
-            return .ghostlang;
-        } else if (std.mem.endsWith(u8, uri, ".ghost")) {
+        } else if (std.mem.endsWith(u8, uri, ".gla")) {
             return .ghostlang;
         }
         // Default to ghostlang for unknown extensions
@@ -36,7 +29,6 @@ pub const LanguageType = enum {
             .ghostlang => try grove.Languages.ghostlang.get(),
             .gshell => try grove.Languages.gshell.get(),
             .gshell_config => try grove.Languages.ghostlang.get(), // Config files use Ghostlang syntax
-            .kalix => try grove.Languages.kalix.get(),
         };
     }
 
@@ -45,8 +37,7 @@ pub const LanguageType = enum {
         return switch (self) {
             .ghostlang => false,
             .gshell => true,
-            .gshell_config => true, // .gshrc.gza has full shell FFI access
-            .kalix => false,
+            .gshell_config => true, // .gshrc.gla has full shell FFI access
         };
     }
 
@@ -56,7 +47,6 @@ pub const LanguageType = enum {
             .ghostlang => false,
             .gshell => false,
             .gshell_config => false,
-            .kalix => true,
         };
     }
 };
@@ -67,7 +57,6 @@ pub const DocumentManager = struct {
     documents: std.StringHashMap(Document),
     parser: grove.Parser,
     blockchain_analyzer: blockchain_analyzer.BlockchainAnalyzer,
-    kalix_provider: kalix_diagnostics.KalixDiagnosticProvider,
 
     pub const Document = struct {
         uri: []const u8,
@@ -96,7 +85,6 @@ pub const DocumentManager = struct {
             .documents = std.StringHashMap(Document).init(allocator),
             .parser = parser,
             .blockchain_analyzer = blockchain_analyzer.BlockchainAnalyzer.init(allocator),
-            .kalix_provider = kalix_diagnostics.KalixDiagnosticProvider.init(allocator),
         };
     }
 
@@ -108,7 +96,6 @@ pub const DocumentManager = struct {
         self.documents.deinit();
         self.parser.deinit();
         self.blockchain_analyzer.deinit();
-        self.kalix_provider.deinit();
     }
 
     /// Open a document and parse it
@@ -116,25 +103,6 @@ pub const DocumentManager = struct {
         // Detect language type from URI
         const lang_type = LanguageType.fromUri(uri);
 
-        // For kalix files, use kalix's own parser (not Grove)
-        if (lang_type == .kalix) {
-            // Kalix uses its own frontend parser, no Grove tree needed
-            const diagnostics = try self.allocator.alloc(blockchain_analyzer.BlockchainDiagnostic, 0);
-
-            const doc = Document{
-                .uri = try self.allocator.dupe(u8, uri),
-                .version = version,
-                .text = try self.allocator.dupe(u8, text),
-                .tree = null, // Kalix doesn't use Grove tree
-                .language_type = lang_type,
-                .diagnostics = diagnostics,
-            };
-
-            try self.documents.put(doc.uri, doc);
-            return;
-        }
-
-        // Set appropriate grammar for non-kalix files
         const language = try lang_type.getGroveLanguage();
         try self.parser.setLanguage(language);
 
@@ -166,24 +134,6 @@ pub const DocumentManager = struct {
         // Free old text and diagnostics
         self.allocator.free(doc.text);
         self.allocator.free(doc.diagnostics);
-
-        // For kalix files, use kalix's own parser (not Grove)
-        if (doc.language_type == .kalix) {
-            // Parse new text
-            if (doc.tree) |*old_tree| {
-                old_tree.deinit();
-            }
-
-            // Kalix uses its own frontend parser, no Grove tree needed
-            const new_diagnostics = try self.allocator.alloc(blockchain_analyzer.BlockchainDiagnostic, 0);
-
-            // Update document
-            doc.text = try self.allocator.dupe(u8, text);
-            doc.version = version;
-            doc.tree = null;
-            doc.diagnostics = new_diagnostics;
-            return;
-        }
 
         // Parse new text
         if (doc.tree) |*old_tree| {
@@ -226,19 +176,5 @@ pub const DocumentManager = struct {
     pub fn getDiagnostics(self: *DocumentManager, uri: []const u8) []const blockchain_analyzer.BlockchainDiagnostic {
         const doc = self.documents.getPtr(uri) orelse return &[_]blockchain_analyzer.BlockchainDiagnostic{};
         return doc.diagnostics;
-    }
-
-    /// Get kalix-specific diagnostics for a kalix document
-    /// Caller must free the returned diagnostics using freeKalixDiagnostics()
-    pub fn getKalixDiagnostics(self: *DocumentManager, uri: []const u8) ![]const protocol.Diagnostic {
-        const doc = self.documents.getPtr(uri) orelse return &[_]protocol.Diagnostic{};
-        if (doc.language_type != .kalix) return &[_]protocol.Diagnostic{};
-
-        return try self.kalix_provider.analyze(doc.text);
-    }
-
-    /// Free kalix diagnostics returned by getKalixDiagnostics()
-    pub fn freeKalixDiagnostics(self: *DocumentManager, diagnostics: []const protocol.Diagnostic) void {
-        self.kalix_provider.freeDiagnostics(diagnostics);
     }
 };
